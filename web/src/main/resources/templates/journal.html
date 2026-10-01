@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head('매매일지 · Cockpit')}"></head>
+<body th:attr="data-market=${market},data-decimals=${decimals}">
+<header th:replace="~{fragments :: nav('journal')}"></header>
+
+<main class="page">
+  <div class="page-head">
+    <h1>매매일지 <span class="muted" th:text="${market == 'kr' ? '· 국내' : '· 해외'}"></span></h1>
+    <nav class="tabs small-tabs">
+      <a th:href="@{/journal/kr}" th:classappend="${market == 'kr'} ? 'on'">국내</a>
+      <a th:href="@{/journal/us}" th:classappend="${market == 'us'} ? 'on'">해외</a>
+      <a th:href="@{/journal/export.csv}" class="btn-sm">켈리용 CSV 내보내기</a>
+    </nav>
+  </div>
+
+  <!-- ① 실전 통계 5대 KPI -->
+  <section class="kpis" aria-label="실전 통계">
+    <article class="kpi"><h2>청산 건수</h2><p class="kpi-value" th:text="${stats.samples}">0</p>
+      <p class="kpi-sub">켈리 적용은 30건 이상부터</p></article>
+    <article class="kpi"><h2>승률</h2>
+      <p class="kpi-value" th:text="${stats.winRate != null} ? ${#numbers.formatDecimal(stats.winRate * 100, 1, 1)} + '%' : '-'">-</p>
+      <p class="kpi-sub" th:text="${stats.winRateLower != null} ? '보수적 하한 ' + ${#numbers.formatDecimal(stats.winRateLower * 100, 1, 1)} + '%' : '-'">-</p></article>
+    <article class="kpi"><h2>손익비</h2>
+      <p class="kpi-value" th:text="${stats.payoff != null} ? ${#numbers.formatDecimal(stats.payoff, 1, 2)} : '-'">-</p>
+      <p class="kpi-sub">평균수익 ÷ |평균손실|</p></article>
+    <article class="kpi"><h2>기대값</h2>
+      <p class="kpi-value" th:text="${stats.expectancy != null} ? ${#numbers.formatDecimal(stats.expectancy * 100, 1, 2)} + '%' : '-'">-</p>
+      <p class="kpi-sub">거래당 평균 수익률</p></article>
+    <article class="kpi"><h2>하프 켈리</h2>
+      <p class="kpi-value" th:text="${stats.halfKelly != null} ? ${#numbers.formatDecimal(stats.halfKelly * 100, 1, 2)} + '%' : '-'">-</p>
+      <p class="kpi-sub" th:text="${stats.note}">-</p></article>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>보유 중 (<span th:text="${open.size()}">0</span>)</h2>
+      <p th:if="${open.isEmpty()}" class="muted">보유 중인 포지션이 없습니다.</p>
+      <div class="table-wrap" th:unless="${open.isEmpty()}">
+        <table>
+          <thead><tr><th>종목</th><th class="num">진입</th><th class="num">손절 / 목표</th><th>청산 기록</th></tr></thead>
+          <tbody>
+          <tr th:each="t : ${open}">
+            <td><strong th:text="${t.name ?: t.code}"></strong><br>
+              <span class="muted small" th:text="${t.code + ' · ' + t.strategy.label() + ' · ' + #temporals.format(t.entryDate, 'yyyy-MM-dd')}"></span></td>
+            <td class="num"><span th:text="${#numbers.formatDecimal(t.entryPrice, 1, 'COMMA', decimals, 'POINT')}"></span>
+              <br><span class="muted small" th:text="${t.quantity} + '주'"></span></td>
+            <td class="num"><span class="status critical" th:text="${#numbers.formatDecimal(t.stopPrice, 1, 'COMMA', decimals, 'POINT')}"></span>
+              <br><span class="muted small" th:text="${#numbers.formatDecimal(t.target1, 1, 'COMMA', decimals, 'POINT')} + ' / ' + ${#numbers.formatDecimal(t.target2, 1, 'COMMA', decimals, 'POINT')}"></span></td>
+            <td>
+              <form class="inline" th:action="@{/journal/{m}/{id}/close(m=${market},id=${t.id})}" method="post">
+                <input type="date" name="exitDate" th:value="${today}" required aria-label="청산일">
+                <input type="number" name="exitPrice" step="any" min="0" required placeholder="청산가" aria-label="청산가">
+                <button type="submit" class="btn-sm">청산</button>
+              </form>
+              <form class="inline" th:action="@{/journal/{m}/{id}/delete(m=${market},id=${t.id})}" method="post"
+                    onsubmit="return confirm('이 기록을 삭제할까요?')">
+                <button type="submit" class="ghost small">삭제</button>
+              </form>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mt">매수 기록</h2>
+      <form class="trade-form" th:action="@{/journal/{m}(m=${market})}" th:object="${form}" method="post">
+        <label>종목코드 <input th:field="*{code}" required></label>
+        <label>종목명 <input th:field="*{name}"></label>
+        <label>전략
+          <select th:field="*{strategy}">
+            <option th:each="s : ${strategies}" th:value="${s}" th:text="${s.label()}"></option>
+          </select>
+        </label>
+        <label>매수일 <input type="date" th:field="*{entryDate}" required></label>
+        <label>매수가 <input type="number" step="any" min="0" th:field="*{entryPrice}" required></label>
+        <label>수량 <input type="number" min="1" th:field="*{quantity}" required></label>
+        <label>손절가 <input type="number" step="any" min="0" th:field="*{stopPrice}"></label>
+        <label>1차 목표 <input type="number" step="any" min="0" th:field="*{target1}"></label>
+        <label>2차 목표 <input type="number" step="any" min="0" th:field="*{target2}"></label>
+        <label class="wide">메모 <input th:field="*{memo}" placeholder="진입 근거, 테마, 수급 특이사항"></label>
+        <p class="alert critical wide" th:if="${#fields.hasErrors('*')}">⛔ 필수 항목(종목코드·매수가·수량)을 확인하세요.</p>
+        <button type="submit" class="primary wide">기록</button>
+      </form>
+    </section>
+
+    <aside class="side">
+      <section class="card">
+        <h2>월별 실현손익</h2>
+        <div class="chart-box"><canvas id="monthlyChart" role="img" aria-label="월별 실현손익 막대 차트"></canvas></div>
+        <table class="small-table" th:unless="${monthly.isEmpty()}">
+          <thead><tr><th>월</th><th class="num">손익</th><th class="num">전월 대비</th></tr></thead>
+          <tbody>
+          <tr th:each="mp : ${monthly}">
+            <td th:text="${mp.month}"></td>
+            <td class="num" th:text="${#numbers.formatDecimal(mp.pnl, 1, 'COMMA', decimals, 'POINT')}"></td>
+            <td class="num" th:text="${mp.momRate != null} ? ${#numbers.formatDecimal(mp.momRate * 100, 1, 1)} + '% · ' + ${mp.momLabel} : ${mp.momLabel}"></td>
+          </tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="card">
+        <h2>최근 청산</h2>
+        <p th:if="${closed.isEmpty()}" class="muted">청산 기록이 없습니다.</p>
+        <ul class="closed-list">
+          <li th:each="t, st : ${closed}" th:if="${st.index < 15}">
+            <span th:text="${t.name ?: t.code}"></span>
+            <span class="muted small" th:text="${#temporals.format(t.exitDate, 'yyyy-MM-dd')}"></span>
+            <strong class="num" th:classappend="${t.returnRate() >= 0} ? 'up' : 'down'"
+                    th:text="(${t.returnRate() >= 0} ? '▲ ' : '▼ ') + ${#numbers.formatDecimal(t.returnRate() * 100, 1, 2)} + '%'"></strong>
+          </li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<script th:src="@{/js/vendor/chart-4.4.1.umd.js}"></script>
+<script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/journal.js}"></script>
+</body>
+</html>

@@ -18,7 +18,7 @@ import pandas as pd
 @dataclass
 class Growth:
     rate: float | None  # 신장률(0.2 = +20%). 계산 불가 시 None
-    label: str          # '정상' / '흑자전환' / '적자축소' / '적자확대' / '적자지속' / '계산불가'
+    label: str          # '정상' / '적자전환' / '흑자전환' / '적자축소' / '적자확대' / '적자지속' / '계산불가'
 
 
 def safe_yoy(curr: float | None, prev: float | None) -> Growth:
@@ -40,7 +40,7 @@ def safe_yoy(curr: float | None, prev: float | None) -> Growth:
 
     rate = (curr - prev) / abs(prev)
     if prev > 0:
-        return Growth(rate, "정상")
+        return Growth(rate, "적자전환" if curr < 0 else "정상")
     if curr >= 0:
         return Growth(rate, "흑자전환")
     return Growth(rate, "적자축소" if curr > prev else ("적자지속" if curr == prev else "적자확대"))

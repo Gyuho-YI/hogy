@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a1a19">
+  <title th:text="${title}">Cockpit</title>
+  <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body>
+<header th:fragment="nav(active)" class="topbar">
+  <a class="brand" th:href="@{/dashboard/kr}">Cockpit</a>
+  <nav class="tabs" aria-label="메뉴">
+    <a th:href="@{/dashboard/kr}" th:classappend="${active == 'dash-kr'} ? 'on'">국내</a>
+    <a th:href="@{/dashboard/us}" th:classappend="${active == 'dash-us'} ? 'on'">해외</a>
+    <a th:href="@{/journal/{m}(m=${market ?: 'kr'})}" th:classappend="${active == 'journal'} ? 'on'">일지</a>
+  </nav>
+  <form th:action="@{/logout}" method="post" class="logout">
+    <button type="submit" class="ghost">로그아웃</button>
+  </form>
+</header>
+</body>
+</html>

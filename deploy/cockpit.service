@@ -1,0 +1,18 @@
+# systemd 서비스: 서버(미니PC/리눅스) 부팅 시 웹앱 자동 실행
+# 설치: sudo cp deploy/cockpit.service /etc/systemd/system/ && sudo systemctl enable --now cockpit
+[Unit]
+Description=Hogy Trading Cockpit (Spring Boot)
+After=network-online.target
+
+[Service]
+User=hogy
+WorkingDirectory=/home/hogy/hogy/web
+# 비밀값은 별도 파일(권한 600)로 분리: APP_PASSWORD=..., APP_REMEMBER_KEY=...
+EnvironmentFile=/home/hogy/hogy/deploy/cockpit.env
+Environment=APP_DATA_DIR=/home/hogy/hogy/output
+Environment=APP_DB_PATH=/home/hogy/hogy/data/journal
+ExecStart=/usr/bin/java -Xmx384m -jar /home/hogy/hogy/web/target/cockpit-0.1.0.jar
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

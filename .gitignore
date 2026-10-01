@@ -1,3 +1,8 @@
 output/
 __pycache__/
 *.csv
+web/target/
+data/
+logs/
+.venv/
+deploy/cockpit.env

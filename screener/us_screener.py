@@ -18,6 +18,7 @@ import pandas as pd
 import yfinance as yf
 
 from common import detect_vcp, rs_rank, safe_yoy, trend_template
+from export import export_plans, plan_record
 from trade_plan import build_plan, edge_from_returns, portfolio_heat
 
 MIN_REV_YOY = 0.20      # 매출 YoY 20% 이상
@@ -47,10 +48,10 @@ def quarterly_revenue_yoy(tk: yf.Ticker):
     return safe_yoy(1 + g, 1) if g is not None else safe_yoy(None, None)
 
 
-def screen(tickers: list[str], account: float = 10_000) -> pd.DataFrame:
+def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, list[dict]]:
     """account: 계좌 평가금액(USD). 해외 전략 백테스트가 없으므로 고정 위험 1%로 사이징."""
     edge = edge_from_returns(pd.Series(dtype=float), "해외 백테스트 없음")
-    plans = []
+    plans, web = [], []
     print(f"[1/3] 가격 데이터 일괄 수집: {len(tickers)}종목")
     px = yf.download(tickers, period="2y", auto_adjust=True, group_by="ticker", progress=False)
 
@@ -66,7 +67,7 @@ def screen(tickers: list[str], account: float = 10_000) -> pd.DataFrame:
 
     base = pd.DataFrame(rows).dropna(subset=["wret"])
     if base.empty:
-        return base
+        return base, []
     base["rs"] = rs_rank(base["wret"])
     stage1 = base[base["tt"].map(lambda x: x["pass"]) & (base["rs"] >= MIN_RS)]
     print(f"[2/3] 트렌드 템플릿 + RS>={MIN_RS} 통과: {len(stage1)}종목")
@@ -100,6 +101,8 @@ def screen(tickers: list[str], account: float = 10_000) -> pd.DataFrame:
             stage = "추세만 충족"
         p = build_plan(r["df"], stage, edge, account, pivot=v.pivot, market="US")
         plans.append(p)
+        if stage != "추세만 충족":
+            web.append(plan_record(r["ticker"], r["ticker"], stage, p, r["df"]))
         out.append({
             "ticker": r["ticker"],
             "RS": round(r["rs"], 1),
@@ -114,7 +117,7 @@ def screen(tickers: list[str], account: float = 10_000) -> pd.DataFrame:
             "추격금지": v.extended,
             "단계": stage, "판단": p.action,
             "매수구간": f"{p.buy_low:,.2f} ~ {p.buy_high:,.2f}" if p.buy_low == p.buy_low else "-",
-            "손절가": p.stop, "1차익절(1/3)": p.t1, "2차익절(1/3)": p.t2,
+            "손절가": p.stop, "손절폭%": round(p.risk_pct * 100, 1) if p.risk_pct == p.risk_pct else None, "1차익절(1/3)": p.t1, "2차익절(1/3)": p.t2,
             "비중%": round(p.weight * 100, 1), "수량": p.shares_now,
             "메모": " / ".join(p.notes),
         })
@@ -123,7 +126,7 @@ def screen(tickers: list[str], account: float = 10_000) -> pd.DataFrame:
     for w in portfolio_heat(plans):
         print("⚠", w)
     res = pd.DataFrame(out)
-    return res.sort_values(["VCP", "RS"], ascending=False) if not res.empty else res
+    return (res.sort_values(["VCP", "RS"], ascending=False) if not res.empty else res), web
 
 
 if __name__ == "__main__":
@@ -132,7 +135,10 @@ if __name__ == "__main__":
                 "MSFT", "AMZN", "GOOGL", "AVGO", "AMD", "NFLX", "ANET", "APP",
                 "AXON", "DDOG", "NET", "SHOP", "UBER", "TTD", "ELF", "DECK"]
     pd.set_option("display.width", 200)
-    res = screen(universe, account=20_000)
+    import os
+    account = float(os.environ.get("ACCOUNT_US", 20_000))  # 계좌 평가금액(USD)
+    res, web = screen(universe, account=account)
+    print("웹앱 계획 JSON:", export_plans("us", web, account))
     print(res.to_string(index=False))
     if not res.empty:
         from export import export_json

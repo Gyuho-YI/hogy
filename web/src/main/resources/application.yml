@@ -1,0 +1,28 @@
+# 개인용 트레이딩 콕핏 설정. 비밀값은 환경변수로만 주입합니다.
+app:
+  data-dir: ${APP_DATA_DIR:../output}          # Python 스크리너 출력 폴더
+  username: ${APP_USER:owner}
+  password: ${APP_PASSWORD:}                  # 비우면 기동 시 임시 비밀번호를 로그에 출력
+  remember-me-key: ${APP_REMEMBER_KEY:change-this-remember-me-key}
+
+spring:
+  application:
+    name: hogy-cockpit
+  datasource:
+    # 매매일지: 파일 기반 H2 (백업은 data/ 폴더 복사로 끝)
+    url: jdbc:h2:file:${APP_DB_PATH:./data/journal}
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  thymeleaf:
+    cache: ${THYMELEAF_CACHE:true}
+
+server:
+  port: ${PORT:8080}
+  servlet:
+    session:
+      timeout: 12h
+  forward-headers-strategy: framework   # Cloudflare Tunnel/리버스 프록시 뒤에서 https 인식

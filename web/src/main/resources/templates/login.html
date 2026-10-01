@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head('로그인 · Cockpit')}"></head>
+<body class="login-page">
+<main class="login-card">
+  <h1>Cockpit</h1>
+  <p class="muted">개인 전용 매매 계획 대시보드</p>
+  <p th:if="${param.error}" class="alert critical" role="alert">⛔ 아이디 또는 비밀번호가 올바르지 않습니다.</p>
+  <p th:if="${param.logout}" class="alert good">✓ 로그아웃되었습니다.</p>
+  <form th:action="@{/login}" method="post">
+    <label>아이디 <input name="username" autocomplete="username" required autofocus></label>
+    <label>비밀번호 <input name="password" type="password" autocomplete="current-password" required></label>
+    <label class="check"><input type="checkbox" name="remember-me" checked> 30일간 로그인 유지</label>
+    <button type="submit" class="primary">로그인</button>
+  </form>
+</main>
+</body>
+</html>

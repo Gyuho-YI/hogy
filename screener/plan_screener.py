@@ -23,6 +23,7 @@ from accumulation import analyze_accumulation
 from kr_accumulation import load
 from kr_accumulation import screen as accumulation_screen
 from kr_screener import biz_date
+from export import export_plans, plan_record
 from trade_plan import edge_from_returns, build_plan, portfolio_heat
 
 IGNITION_LOOKBACK = 10  # 최근 10영업일 내 점화면 '점화' 단계로 계획 수립
@@ -49,21 +50,21 @@ def find_ignition(px, flow, shares_out, sb) -> int | None:
     return None
 
 
-def main(account: float, stats_csv: str | None) -> pd.DataFrame:
+def main(account: float, stats_csv: str | None) -> tuple[pd.DataFrame, list[dict]]:
     edges = load_edges(stats_csv)
     for k, e in edges.items():
         print(f"[Edge:{k}] 승률(하한) {e.p} / 손익비 {e.b} / 풀켈리 {e.kelly} / 적용 위험 {e.risk:.2%} — {e.source}")
 
     cands = accumulation_screen()
     if cands.empty:
-        return cands
+        return cands, []
     end = biz_date()
     start = (datetime.strptime(end, "%Y%m%d") - timedelta(days=420)).strftime("%Y%m%d")
     from pykrx import stock  # 상장주식수 조회
 
     shares_out = stock.get_market_cap(end, market="ALL")["상장주식수"]
 
-    rows, plans = [], []
+    rows, plans, web = [], [], []
     for _, c in cands.iterrows():
         t = c["code"]
         try:
@@ -79,6 +80,7 @@ def main(account: float, stats_csv: str | None) -> pd.DataFrame:
             p = build_plan(px, stage, edge, account, pivot=pivot,
                            ignition_idx=ign, accum_start_idx=accum_start)
             plans.append(p)
+            web.append(plan_record(t, c["name"], stage, p, px))
             rows.append({
                 "code": t, "name": c["name"], "단계": stage, "판단": p.action,
                 "현재가": float(px["Close"].iloc[-1]),
@@ -99,7 +101,7 @@ def main(account: float, stats_csv: str | None) -> pd.DataFrame:
     for w in portfolio_heat(plans):
         print("⚠", w)
     order = {"지금 매수 가능": 0, "지정가 대기": 1, "관망": 2}
-    return pd.DataFrame(rows).sort_values("판단", key=lambda s: s.map(order))
+    return pd.DataFrame(rows).sort_values("판단", key=lambda s: s.map(order)), web
 
 
 if __name__ == "__main__":
@@ -109,7 +111,8 @@ if __name__ == "__main__":
     a = ap.parse_args()
 
     pd.set_option("display.width", 260)
-    res = main(a.account, a.stats)
+    res, web = main(a.account, a.stats)
+    print("웹앱 계획 JSON:", export_plans("kr", web, a.account))
     print(res.to_string(index=False))
     if not res.empty:
         fname = f"trade_plan_{biz_date()}.csv"

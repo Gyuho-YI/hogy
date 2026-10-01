@@ -1,4 +1,10 @@
-# hogy — AI 보조 주식 스크리너
+# hogy — AI 보조 주식 스크리너 + 개인용 트레이딩 콕핏
+
+- `screener/` : Python 스크리너(국내 매집·점화 / 해외 VCP) → 하프켈리 매매 계획 JSON
+- `web/` : Spring Boot 3 웹앱(1인 로그인) — KPI 대시보드, 매매 계획표·차트, 매매일지 → 실전 켈리 CSV
+- 설치·운영 A–Z: [`docs/WEBAPP_GUIDE.md`](docs/WEBAPP_GUIDE.md)
+
+![대시보드](docs/screenshots/dashboard-kr.png)
 
 | 파일 | 대상 | 1차 필터 철학 |
 |---|---|---|

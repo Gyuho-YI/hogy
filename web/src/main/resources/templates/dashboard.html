@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head(${market == 'kr' ? '국내 매매 계획' : '해외 매매 계획'})}"></head>
+<body th:attr="data-market=${market},data-decimals=${decimals}">
+<header th:replace="~{fragments :: nav(${'dash-' + market})}"></header>
+
+<main class="page">
+  <!-- 제목 + 데이터 기준 시각 -->
+  <div class="page-head">
+    <h1 th:text="${market == 'kr' ? '국내 매매 계획' : '해외 매매 계획'}">매매 계획</h1>
+    <p class="muted" th:if="${snap.generatedAt}">기준 <span th:text="${snap.generatedAt}"></span>
+      · 계좌 <span th:text="${#numbers.formatDecimal(snap.account, 1, 'COMMA', 0, 'POINT')}"></span></p>
+  </div>
+  <p th:if="${snap.loadError}" class="alert warning" role="status">⚠ <span th:text="${snap.loadError}"></span></p>
+
+  <!-- ① 5대 KPI: F-pattern 첫 줄 -->
+  <section class="kpis" aria-label="핵심 지표">
+    <article class="kpi">
+      <h2>오늘 주문 대상</h2>
+      <p class="kpi-value"><span th:text="${kpi.actionable}">0</span><small> / <span th:text="${kpi.candidates}">0</span>종목</small></p>
+      <p class="kpi-sub">관망 제외, 실행 우선순위 순</p>
+    </article>
+    <article class="kpi">
+      <h2>총 위험(Heat)</h2>
+      <p class="kpi-value" th:text="${kpi.heatPct != null} ? ${#numbers.formatDecimal(kpi.heatPct * 100, 1, 1)} + '%' : '-'">-</p>
+      <p class="kpi-sub status" th:classappend="${kpi.heatStatus}">
+        <span th:switch="${kpi.heatStatus}">
+          <span th:case="'good'">✓ 안전 (6% 이하)</span>
+          <span th:case="'warning'">⚠ 주의 (6% 초과)</span>
+          <span th:case="'critical'">⛔ 위험 (10% 초과)</span>
+          <span th:case="*">계좌 정보 없음</span>
+        </span>
+      </p>
+    </article>
+    <article class="kpi">
+      <h2>평균 손익비</h2>
+      <p class="kpi-value" th:text="${kpi.avgRewardRisk != null} ? ${#numbers.formatDecimal(kpi.avgRewardRisk, 1, 1)} + ' : 1' : '-'">-</p>
+      <p class="kpi-sub">2차 목표 기준, 3:1 이상 권장</p>
+    </article>
+    <article class="kpi">
+      <h2>체결 후 현금 비중</h2>
+      <p class="kpi-value" th:text="${kpi.cashPct != null} ? ${#numbers.formatDecimal(kpi.cashPct * 100, 1, 0)} + '%' : '-'">-</p>
+      <p class="kpi-sub" th:classappend="${kpi.cashPct != null and kpi.cashPct < 0} ? 'status critical'"
+         th:text="${kpi.cashPct != null and kpi.cashPct < 0} ? '⛔ 계좌 초과 주문' : '보유 + 오늘 주문 반영'">보유 + 오늘 주문 반영</p>
+    </article>
+    <article class="kpi">
+      <h2>실전 기대값</h2>
+      <p class="kpi-value" th:text="${kpi.expectancyPct != null} ? ${#numbers.formatDecimal(kpi.expectancyPct * 100, 1, 2)} + '%' : '-'">-</p>
+      <p class="kpi-sub">거래당 평균 · 청산 <span th:text="${kpi.samples}">0</span>건</p>
+    </article>
+  </section>
+
+  <div class="grid">
+    <!-- ② 좌측: 매매 계획표 (실행 순) -->
+    <section class="card plan-card" aria-label="매매 계획표">
+      <h2>매매 계획표</h2>
+      <p th:if="${items.isEmpty()}" class="muted">표시할 후보가 없습니다. 배치 실행 결과를 확인하세요.</p>
+      <div class="table-wrap" th:unless="${items.isEmpty()}">
+        <table class="plan-table">
+          <thead>
+          <tr>
+            <th>종목</th><th>판단</th><th class="num">매수 구간</th><th class="num">손절</th>
+            <th class="num hide-sm">1차 / 2차 익절</th><th class="num">수량</th><th class="num hide-sm">손익비</th><th></th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="it : ${items}" th:attr="data-code=${it.code}" class="plan-row" tabindex="0">
+            <td><strong th:text="${it.name}">이름</strong><br><span class="muted small" th:text="${it.code + ' · ' + it.stage}">코드</span></td>
+            <td>
+              <span class="badge" th:switch="${it.action}">
+                <span th:case="'지금 매수 가능'" class="badge good">✓ 매수 가능</span>
+                <span th:case="'돌파 대기(Buy Stop)'" class="badge info">⏱ 돌파 대기</span>
+                <span th:case="'지정가 대기'" class="badge warning">◷ 지정가 대기</span>
+                <span th:case="*" class="badge muted">– 관망</span>
+              </span>
+            </td>
+            <td class="num" th:text="${#numbers.formatDecimal(it.buyLow, 1, 'COMMA', decimals, 'POINT')} + ' ~ ' + ${#numbers.formatDecimal(it.buyHigh, 1, 'COMMA', decimals, 'POINT')}">-</td>
+            <td class="num"><span th:text="${#numbers.formatDecimal(it.stop, 1, 'COMMA', decimals, 'POINT')}">-</span>
+              <br><span class="muted small" th:if="${it.riskPct != null}" th:text="'-' + ${#numbers.formatDecimal(it.riskPct * 100, 1, 1)} + '%'"></span></td>
+            <td class="num hide-sm" th:text="${#numbers.formatDecimal(it.t1, 1, 'COMMA', decimals, 'POINT')} + ' / ' + ${#numbers.formatDecimal(it.t2, 1, 'COMMA', decimals, 'POINT')}">-</td>
+            <td class="num"><span th:text="${#numbers.formatInteger(it.sharesNow, 1, 'COMMA')}">0</span>
+              <br><span class="muted small" th:if="${it.sharesAdd > 0}" th:text="'+' + ${it.sharesAdd} + ' 점화 시'"></span></td>
+            <td class="num hide-sm" th:text="${it.rewardRisk() != null} ? ${#numbers.formatDecimal(it.rewardRisk(), 1, 1)} : '-'">-</td>
+            <td><a class="btn-sm" th:if="${it.actionable()}" th:href="@{/journal/{m}(m=${market},code=${it.code})}">일지 기록</a></td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ③ 우측: 선택 종목 차트 + 후보 분포 -->
+    <aside class="side">
+      <section class="card">
+        <h2 id="detail-title">종목 차트</h2>
+        <div class="chart-box tall"><canvas id="detailChart" aria-describedby="detail-notes"></canvas></div>
+        <ul id="detail-notes" class="notes"></ul>
+      </section>
+      <section class="card">
+        <h2>손절폭 대비 손익비</h2>
+        <p class="muted small">왼쪽 위일수록 적게 잃고 크게 버는 후보</p>
+        <div class="chart-box"><canvas id="rrChart" role="img" aria-label="후보별 손절폭과 손익비 산점도"></canvas></div>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<script th:src="@{/js/vendor/chart-4.4.1.umd.js}"></script>
+<script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/dashboard.js}"></script>
+</body>
+</html>
