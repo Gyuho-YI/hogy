@@ -6,3 +6,4 @@ data/
 logs/
 .venv/
 deploy/cockpit.env
+scripts/windows/secrets.bat

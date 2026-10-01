@@ -57,6 +57,16 @@ hogy/
 └── data/                  매매일지 DB (git 제외, 백업 대상)
 ```
 
+## D-1. 설치 — Windows 개인 PC (권장 경로)
+
+1. 설치: [Python 3.11+](https://www.python.org/downloads/) (설치 시 *Add to PATH* 체크), [JDK 17 Temurin](https://adoptium.net/), [Git](https://git-scm.com/)
+2. 코드 받기: `git clone -b claude/stock-screening-ai-strategy-vae6o1 https://github.com/gyuho-yi/hogy.git C:\hogy`
+3. `C:\hogy\scripts\windows\setup.bat` 더블클릭 (가상환경·패키지·웹앱 빌드, Maven 설치 불필요)
+4. `scripts\windows\secrets.bat` 열어 비밀번호·계좌 금액 수정
+5. `scripts\windows\register_tasks.bat` 더블클릭 → 웹앱 로그온 자동 실행 + 배치 스케줄 등록
+6. 첫 확인: `run_batch.bat kr` 수동 실행 → `start_web.bat` → 브라우저 `http://localhost:8080`
+7. 전원 옵션: *절전 모드 = 안 함*, 덮개 닫을 때 *아무 것도 안 함* (배치 시각에 PC 가 깨어 있어야 함)
+
 ## D. 설치 (최초 1회, 우분투 미니PC 기준 — 윈도우는 WSL2 로 동일)
 
 ```bash
