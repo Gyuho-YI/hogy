@@ -18,6 +18,7 @@ import pandas as pd
 import yfinance as yf
 
 from common import detect_vcp, rs_rank, safe_yoy, trend_template
+from trade_plan import build_plan, edge_from_returns, portfolio_heat
 
 MIN_REV_YOY = 0.20      # 매출 YoY 20% 이상
 MAX_DEBT_EQUITY = 100   # 부채비율(D/E) 100% 이하 (금융업은 구조상 높으므로 별도 유니버스 권장)
@@ -46,7 +47,10 @@ def quarterly_revenue_yoy(tk: yf.Ticker):
     return safe_yoy(1 + g, 1) if g is not None else safe_yoy(None, None)
 
 
-def screen(tickers: list[str]) -> pd.DataFrame:
+def screen(tickers: list[str], account: float = 10_000) -> pd.DataFrame:
+    """account: 계좌 평가금액(USD). 해외 전략 백테스트가 없으므로 고정 위험 1%로 사이징."""
+    edge = edge_from_returns(pd.Series(dtype=float), "해외 백테스트 없음")
+    plans = []
     print(f"[1/3] 가격 데이터 일괄 수집: {len(tickers)}종목")
     px = yf.download(tickers, period="2y", auto_adjust=True, group_by="ticker", progress=False)
 
@@ -86,6 +90,16 @@ def screen(tickers: list[str]) -> pd.DataFrame:
             continue
 
         v = detect_vcp(r["df"])
+        # 매매 계획: 돌파 당일/돌파 후 → '점화', VCP 형성 중 → '돌파 대기'(Buy Stop), 그 외 → 계획 없음
+        close = float(r["df"]["Close"].iloc[-1])
+        if v.pivot and close > v.pivot:
+            stage = "점화"
+        elif v.is_vcp:
+            stage = "돌파 대기"
+        else:
+            stage = "추세만 충족"
+        p = build_plan(r["df"], stage, edge, account, pivot=v.pivot, market="US")
+        plans.append(p)
         out.append({
             "ticker": r["ticker"],
             "RS": round(r["rs"], 1),
@@ -98,9 +112,16 @@ def screen(tickers: list[str]) -> pd.DataFrame:
             "pivot": round(v.pivot, 2) if v.pivot else None,
             "오늘돌파": v.breakout_today,
             "추격금지": v.extended,
+            "단계": stage, "판단": p.action,
+            "매수구간": f"{p.buy_low:,.2f} ~ {p.buy_high:,.2f}" if p.buy_low == p.buy_low else "-",
+            "손절가": p.stop, "1차익절(1/3)": p.t1, "2차익절(1/3)": p.t2,
+            "비중%": round(p.weight * 100, 1), "수량": p.shares_now,
+            "메모": " / ".join(p.notes),
         })
 
     print(f"[3/3] 펀더멘털 통과: {len(out)}종목")
+    for w in portfolio_heat(plans):
+        print("⚠", w)
     res = pd.DataFrame(out)
     return res.sort_values(["VCP", "RS"], ascending=False) if not res.empty else res
 
@@ -111,4 +132,8 @@ if __name__ == "__main__":
                 "MSFT", "AMZN", "GOOGL", "AVGO", "AMD", "NFLX", "ANET", "APP",
                 "AXON", "DDOG", "NET", "SHOP", "UBER", "TTD", "ELF", "DECK"]
     pd.set_option("display.width", 200)
-    print(screen(universe).to_string(index=False))
+    res = screen(universe, account=20_000)
+    print(res.to_string(index=False))
+    if not res.empty:
+        from export import export_json
+        print("저장 완료:", export_json(res, "us"))

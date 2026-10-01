@@ -115,3 +115,5 @@ if __name__ == "__main__":
         fname = f"trade_plan_{biz_date()}.csv"
         res.to_csv(fname, index=False, encoding="utf-8-sig")
         print(f"\n저장 완료: {fname}")
+        from export import export_json
+        print("웹앱용 JSON:", export_json(res, "kr"))

@@ -40,10 +40,13 @@ def tick_size(price: float) -> int:
     return 1_000
 
 
-def to_tick(price: float, mode: str = "down") -> float:
-    """주문 가능한 호가로 보정. 매수 지정가·손절·목표가 모두 '불리한 쪽'(down)으로 보수적 처리."""
+def to_tick(price: float, mode: str = "down", market: str = "KR") -> float:
+    """주문 가능한 호가로 보정. 매수 지정가·손절·목표가 모두 '불리한 쪽'(down)으로 보수적 처리.
+    market='US' 는 $1 이상 주식의 최소 호가 $0.01 기준."""
     if price is None or not math.isfinite(price) or price <= 0:
         return float("nan")
+    if market == "US":
+        return round((math.floor if mode == "down" else math.ceil)(price * 100) / 100, 2)
     t = tick_size(price)
     return float((math.floor if mode == "down" else math.ceil)(price / t) * t)
 
@@ -139,7 +142,13 @@ def climax_signal(px: pd.DataFrame, entry_idx: int | None = None) -> list[str]:
 
 def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
                pivot: float | None = None, ignition_idx: int | None = None,
-               accum_start_idx: int | None = None) -> TradePlan:
+               accum_start_idx: int | None = None, market: str = "KR") -> TradePlan:
+    """
+    stage
+    - '점화'                         : 피벗 돌파 완료(국내 점화 / 해외 VCP 돌파)
+    - '매집 후기(점화 대기)'·'매집 진행': 국내 매집 단계 → 1/3 선진입
+    - '돌파 대기'                    : 해외 VCP 형성 중 → 선진입 없이 피벗 Buy Stop 주문(미너비니 원칙)
+    """
     c = float(px["Close"].iloc[-1])
     notes: list[str] = []
     zones = support_zones(px, pivot=pivot, ignition_idx=ignition_idx, accum_start_idx=accum_start_idx)
@@ -160,6 +169,11 @@ def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
             notes.append("피벗 하회 마감: 돌파 실패 여부 확인 전 관망")
         else:
             action = "지금 매수 가능"
+    elif stage == "돌파 대기" and pivot:
+        # 미너비니: 피벗 돌파 '당일'에만 매수. 피벗~+5% 구간에 Buy Stop(조건부 지정가) 주문을 걸어 둠
+        lo, hi = pivot, pivot * (1 + CHASE_LIMIT)
+        action = "돌파 대기(Buy Stop)"
+        notes.append("피벗 돌파 + 거래량 50일 평균 200% 이상일 때만 체결 유효(장 마감 후 거래량 확인)")
     elif stage in ("매집 후기(점화 대기)", "매집 진행"):
         # 박스 상단 근처 추격을 피하고 하단 쪽에서 분할 매수: [현재가 -3% ~ 현재가], 박스하단 위로 제한
         box_low = float(px["Low"].iloc[-20:].min())
@@ -213,9 +227,10 @@ def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
         shares_now = 0
 
     return TradePlan(
-        action, stage, to_tick(lo), to_tick(hi), to_tick(stop), to_tick(t1), to_tick(t2), trail,
+        action, stage, to_tick(lo, market=market), to_tick(hi, market=market), to_tick(stop, market=market),
+        to_tick(t1, market=market), to_tick(t2, market=market), trail,
         round(risk_pct, 4), edge, round(weight, 4), shares_now, shares_add,
-        to_tick(add_trigger, "up") if add_trigger else None, notes,
+        to_tick(add_trigger, "up", market) if add_trigger else None, notes,
     )
 
 
