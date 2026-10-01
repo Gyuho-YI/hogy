@@ -8,11 +8,22 @@
 | `screener/accumulation.py` | 공통 | 매집 단계 판정 순수 로직(매집 진행 / 점화 대기 / 점화) |
 | `screener/entry_backtest.py` | 국내 | 진입 시점 비교 백테스트: 선진입 vs 점화진입 vs 분할진입(1/3+2/3), 동일 청산 규칙 |
 | `screener/support.py` | 공통 | 지지 구간 산출(돌파피벗·AVWAP·매물대·점화봉·20일선 병합) + 추격매수 판정·포지션 사이징 |
+| `screener/trade_plan.py` | 공통 | 하프 켈리(Wilson 하한·상한 캡) 사이징 + 매수구간·손절·2R/3R 분할익절·트레일링·클라이맥스 + 호가단위 보정 |
+| `screener/plan_screener.py` | 국내 | 매집/점화 후보 → 종목별 매매 계획표 CSV, 포트폴리오 총 위험(Heat) 점검 |
 | `screener/common.py` | 공통 | YoY 예외 처리(분모 0·적자 전환), 트렌드 템플릿, VCP 탐지 |
 
 ```bash
 pip install -r requirements.txt
 cd screener && python us_screener.py   # 또는 python kr_screener.py (장 마감 후 실행 권장)
+```
+
+## 권장 실행 순서 (국내)
+
+```bash
+cd screener
+python entry_backtest.py                                   # 1) 승률·손익비 산출 (월 1회 갱신)
+python plan_screener.py --account 30000000 \
+       --stats entry_backtest_YYYYMMDD.csv                 # 2) 매일 장 마감 후 매매 계획표
 ```
 
 ## 국내 2단계: LLM 테마 태깅 프롬프트

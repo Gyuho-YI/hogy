@@ -7,6 +7,7 @@
 3) 매물대(POC)   : 최근 N일 거래량이 가장 많이 쌓인 가격대(Volume Profile)
 4) 점화봉 50%    : 점화일 장대양봉의 중간값. 이 아래로 밀리면 돌파 실패 신호
 5) 20일선        : 추세 종목의 1차 눌림 지지
+6) 박스하단      : 최근 20일 저가. 매집 박스 이탈 = 매집 가설 무효
 
 추격 판단: '얼마나 올랐나'가 아니라 '손절선까지 거리'로 판단합니다.
 - 진입가 ~ 가장 가까운 지지(손절선) 거리가 8% 이하이고, ATR 2배 이하이며, 손익비 3:1 이상일 때만 허용
@@ -48,6 +49,7 @@ class Zone:
     price: float          # 구간 대표가(겹친 지지선 평균)
     sources: list[str]    # 어떤 지지선들이 겹쳤는지
     strength: int         # 겹친 개수(2개 이상 = 강한 지지)
+    low: float = 0.0      # 구간 최저 레벨(손절 기준은 평균이 아닌 구간 하단)
 
 
 def support_zones(px: pd.DataFrame, pivot: float | None = None, ignition_idx: int | None = None,
@@ -65,6 +67,7 @@ def support_zones(px: pd.DataFrame, pivot: float | None = None, ignition_idx: in
     if accum_start_idx is not None:
         levels.append((anchored_vwap(px, accum_start_idx), "AVWAP(매집시작)"))
     levels.append((volume_poc(px), "매물대POC"))
+    levels.append((px["Low"].iloc[-20:].min(), "박스하단(20일저가)"))
     levels.append((px["Close"].rolling(20).mean().iloc[-1], "20일선"))
 
     below = sorted([(p, s) for p, s in levels if pd.notna(p) and p < c], reverse=True)
@@ -75,10 +78,12 @@ def support_zones(px: pd.DataFrame, pivot: float | None = None, ignition_idx: in
             z.sources.append(s)
             z.price = (z.price * (len(z.sources) - 1) + p) / len(z.sources)
             z.strength = len(z.sources)
+            z.low = min(z.low, p)
         else:
-            zones.append(Zone(p, [s], 1))
+            zones.append(Zone(p, [s], 1, p))
     for z in zones:
         z.price = round(float(z.price), 2)
+        z.low = round(float(z.low), 2)
     return zones
 
 
@@ -110,7 +115,7 @@ def chase_check(px: pd.DataFrame, zones: list[Zone], target: float | None = None
 
     strong = [z for z in zones if z.strength >= 2]
     anchor = strong[0] if strong else zones[0]
-    stop = anchor.price * 0.99
+    stop = anchor.low * 0.99
     dist = (entry - stop) / entry
     a = atr(px).iloc[-1]
     atr_mult = (entry - stop) / a if a and a > 0 else float("nan")
