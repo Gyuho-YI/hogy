@@ -4,6 +4,8 @@
 |---|---|---|
 | `screener/us_screener.py` | 미국 | 펀더멘털(분기 매출 YoY) + 미너비니 트렌드 템플릿 + RS Rating + VCP |
 | `screener/kr_screener.py` | 국내 | 거래대금 폭발 + 외국인·기관 수급 + 20/60/120 정배열 + 과열 배제 + VCP |
+| `screener/kr_accumulation.py` | 국내 | 눌림 매집 탐지: 주가 정체 + 기관·외국인 누적 순매수(상장주식 대비) + 숏커버 배제 → 점화 신호 |
+| `screener/accumulation.py` | 공통 | 매집 단계 판정 순수 로직(매집 진행 / 점화 대기 / 점화) |
 | `screener/common.py` | 공통 | YoY 예외 처리(분모 0·적자 전환), 트렌드 템플릿, VCP 탐지 |
 
 ```bash
