@@ -7,6 +7,7 @@
 | `screener/kr_accumulation.py` | 국내 | 눌림 매집 탐지: 주가 정체 + 기관·외국인 누적 순매수(상장주식 대비) + 숏커버 배제 → 점화 신호 |
 | `screener/accumulation.py` | 공통 | 매집 단계 판정 순수 로직(매집 진행 / 점화 대기 / 점화) |
 | `screener/entry_backtest.py` | 국내 | 진입 시점 비교 백테스트: 선진입 vs 점화진입 vs 분할진입(1/3+2/3), 동일 청산 규칙 |
+| `screener/support.py` | 공통 | 지지 구간 산출(돌파피벗·AVWAP·매물대·점화봉·20일선 병합) + 추격매수 판정·포지션 사이징 |
 | `screener/common.py` | 공통 | YoY 예외 처리(분모 0·적자 전환), 트렌드 템플릿, VCP 탐지 |
 
 ```bash
