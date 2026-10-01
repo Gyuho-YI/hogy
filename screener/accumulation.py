@@ -119,7 +119,9 @@ def analyze_accumulation(
             notes.append(f"공매도 잔고 {decrease:,.0f}주 감소 → 외국인 매수 상당분이 숏커버 추정")
 
     # ---- 단계 판정 ----
-    accumulating = cum_pct >= min_cum_pct and price_chg <= max_price_chg and buy_day_ratio >= min_buy_day_ratio
+    # 점화일은 당일 급등으로 기간 상승률이 기준을 넘으므로, '전일까지' 가격 정체였는지로 판정합니다.
+    base_chg = p["Close"].iloc[-2] / p["Close"].iloc[0] - 1 if ignition else price_chg
+    accumulating = cum_pct >= min_cum_pct and base_chg <= max_price_chg and buy_day_ratio >= min_buy_day_ratio
     if short_cover:
         accumulating = False
     if not accumulating:
