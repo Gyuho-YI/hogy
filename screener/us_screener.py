@@ -2,7 +2,7 @@
 해외(미국) 주식 스크리너: 미너비니 트렌드 템플릿 + RS Rating + VCP + 펀더멘털(분기 YoY)
 
 원본 스크립트 대비 개선 사항
-- 가격 데이터를 yf.download 로 일괄 수집(종목별 호출 → 1회 호출, Rate Limit 위험 감소)
+- 가격 데이터를 yf.download 로 일괄 수집 + 실패 종목만 순차 재시도(Rate Limit·캐시 충돌 대응)
 - 트렌드 템플릿 7개 가격 조건 + RS Rating(유니버스 내 백분위) 반영
 - 매출 YoY 를 분기 손익계산서(전년 동기 대비)로 직접 계산, 분모 0/음수 예외 처리
 - 데이터 결측을 0 으로 덮지 않고 '계산불가'로 명시(조용한 탈락 방지)
@@ -48,22 +48,45 @@ def quarterly_revenue_yoy(tk: yf.Ticker):
     return safe_yoy(1 + g, 1) if g is not None else safe_yoy(None, None)
 
 
+def load_prices(tickers: list[str]) -> dict[str, pd.DataFrame]:
+    """
+    일괄 다운로드 후, 실패 종목만 1개씩 재시도.
+    yfinance 병렬 다운로드는 내부 시간대 캐시(SQLite) 충돌로 'database is locked' 가 간헐 발생 → 순차 재시도로 보완.
+    """
+    px = yf.download(tickers, period="2y", auto_adjust=True, group_by="ticker", progress=False)
+    frames: dict[str, pd.DataFrame] = {}
+    for t in tickers:
+        try:
+            df = px[t].dropna() if len(tickers) > 1 else px.dropna()
+        except KeyError:
+            df = pd.DataFrame()
+        if not df.empty:
+            frames[t] = df
+
+    missing = [t for t in tickers if t not in frames]
+    for t in missing:
+        try:
+            df = yf.Ticker(t).history(period="2y", auto_adjust=True)[["Open", "High", "Low", "Close", "Volume"]].dropna()
+            if not df.empty:
+                frames[t] = df
+                print(f"  재시도 성공: {t}")
+        except Exception as e:
+            print(f"  ! {t} 재시도 실패: {e}")
+        time.sleep(0.3)
+    print(f"  가격 수신 {len(frames)}/{len(tickers)}종목")
+    return frames
+
+
 def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, list[dict]]:
     """account: 계좌 평가금액(USD). 해외 전략 백테스트가 없으므로 고정 위험 1%로 사이징."""
     edge = edge_from_returns(pd.Series(dtype=float), "해외 백테스트 없음")
     plans, web = [], []
     print(f"[1/3] 가격 데이터 일괄 수집: {len(tickers)}종목")
-    px = yf.download(tickers, period="2y", auto_adjust=True, group_by="ticker", progress=False)
+    frames = load_prices(tickers)
 
     # --- [1] 기술적 필터 (펀더멘털 API 호출 전에 먼저 걸러 호출 수 최소화) ---
     rows = []
-    for t in tickers:
-        try:
-            df = px[t].dropna() if len(tickers) > 1 else px.dropna()
-        except KeyError:
-            continue
-        if df.empty:  # 다운로드 실패 종목
-            continue
+    for t, df in frames.items():
         tt = trend_template(df)
         rows.append({"ticker": t, "df": df, "tt": tt, "wret": weighted_return(df["Close"])})
 
