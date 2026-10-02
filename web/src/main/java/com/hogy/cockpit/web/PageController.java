@@ -25,6 +25,7 @@ import com.hogy.cockpit.journal.TradeForm;
 import com.hogy.cockpit.plan.PlanItem;
 import com.hogy.cockpit.plan.PlanRepository;
 import com.hogy.cockpit.plan.PlanSnapshot;
+import com.hogy.cockpit.settings.SettingsService;
 
 /** 화면(Thymeleaf) 컨트롤러: 로그인 / 대시보드 / 매매일지. */
 @Controller
@@ -33,16 +34,19 @@ public class PageController {
     private final PlanRepository plans;
     private final KpiService kpis;
     private final JournalService journal;
+    private final SettingsService settings;
 
-    public PageController(PlanRepository plans, KpiService kpis, JournalService journal) {
+    public PageController(PlanRepository plans, KpiService kpis, JournalService journal, SettingsService settings) {
         this.plans = plans;
         this.kpis = kpis;
         this.journal = journal;
+        this.settings = settings;
     }
 
     @GetMapping("/login")
     public String login() {
-        return "login";
+        // 데스크톱 최초 실행: 비밀번호가 없으면 설정 화면으로
+        return settings.isPasswordReady() ? "login" : "redirect:/setup";
     }
 
     @GetMapping("/")

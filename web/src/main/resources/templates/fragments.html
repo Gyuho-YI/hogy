@@ -14,6 +14,7 @@
     <a th:href="@{/dashboard/kr}" th:classappend="${active == 'dash-kr'} ? 'on'">국내</a>
     <a th:href="@{/dashboard/us}" th:classappend="${active == 'dash-us'} ? 'on'">해외</a>
     <a th:href="@{/journal/{m}(m=${market ?: 'kr'})}" th:classappend="${active == 'journal'} ? 'on'">일지</a>
+    <a th:href="@{/settings}" th:classappend="${active == 'settings'} ? 'on'">설정</a>
   </nav>
   <form th:action="@{/logout}" method="post" class="logout">
     <button type="submit" class="ghost">로그아웃</button>

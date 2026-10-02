@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head('설정 · Cockpit')}"></head>
+<body>
+<header th:replace="~{fragments :: nav('settings')}"></header>
+
+<main class="page">
+  <div class="page-head"><h1>설정</h1></div>
+  <p th:if="${ok}" class="alert good" role="status">✓ <span th:text="${ok}"></span></p>
+  <p th:if="${error}" class="alert critical" role="alert">⛔ <span th:text="${error}"></span></p>
+
+  <div class="grid">
+    <div class="side">
+      <!-- ① 스크리닝 실행 -->
+      <section class="card">
+        <h2>스크리닝 실행</h2>
+        <p th:unless="${batchEnabled}" class="muted">서버 모드: 배치는 cron/작업 스케줄러로 실행합니다(APP_BATCH_ENABLED=true 로 전환 가능).</p>
+        <div th:if="${batchEnabled}" class="batch-grid">
+          <article th:each="b : ${batches}" class="batch-box" th:attr="data-market=${b.market}">
+            <h3 th:text="${b.market == 'kr' ? '국내 (장 마감 후 18시 이후)' : '해외 (미국 장 마감 후)'}">시장</h3>
+            <p class="batch-state">
+              <span class="state-text" th:text="${b.label()}">상태</span><br>
+              <span class="muted small" th:if="${b.finishedAt}" th:text="'마지막 종료 ' + ${#temporals.format(b.finishedAt, 'MM-dd HH:mm')}"></span>
+            </p>
+            <form th:action="@{/settings/batch/{m}(m=${b.market})}" method="post">
+              <button type="submit" class="primary" th:disabled="${b.running}">지금 실행</button>
+            </form>
+            <details>
+              <summary class="small">실행 로그</summary>
+              <pre class="log" th:text="${b.logText()}"></pre>
+            </details>
+          </article>
+        </div>
+      </section>
+
+      <!-- ② 계좌·자동 실행 -->
+      <section class="card">
+        <h2>계좌 금액 · 자동 실행</h2>
+        <form class="trade-form" th:action="@{/settings/trading}" method="post">
+          <label>국내 계좌 평가금액 (원)
+            <input type="number" name="accountKr" min="0" step="any" th:value="${s.accountKr != null} ? ${#numbers.formatDecimal(s.accountKr, 1, 0)}" placeholder="예: 30000000"></label>
+          <label>해외 계좌 평가금액 (USD)
+            <input type="number" name="accountUs" min="0" step="any" th:value="${s.accountUs != null} ? ${#numbers.formatDecimal(s.accountUs, 1, 2)}" placeholder="예: 20000"></label>
+          <label class="check wide"><input type="checkbox" name="autoBatch" value="true" th:checked="${s.autoBatch}">
+            자동 실행 (국내 평일 18:35 · 해외 화~토 07:10, 프로그램이 켜져 있을 때)</label>
+          <p class="muted small wide">매수 수량은 계좌 금액 × 위험 한도로 계산됩니다. 월 1회 실제 평가금액으로 갱신하세요.</p>
+          <button type="submit" class="primary wide">저장</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="side">
+      <!-- ③ 계정 -->
+      <section class="card">
+        <h2>계정</h2>
+        <p class="small">아이디: <strong th:text="${username}">owner</strong></p>
+        <p th:if="${envPassword}" class="muted small">비밀번호는 서버 환경변수(APP_PASSWORD)로 관리됩니다.</p>
+        <form th:unless="${envPassword}" class="trade-form" th:action="@{/settings/password}" method="post">
+          <label class="wide">현재 비밀번호 <input type="password" name="current" autocomplete="current-password" required></label>
+          <label>새 비밀번호 <input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
+          <label>새 비밀번호 확인 <input type="password" name="confirm" minlength="8" autocomplete="new-password" required></label>
+          <button type="submit" class="ghost wide">비밀번호 변경</button>
+        </form>
+      </section>
+
+      <!-- ④ 데이터 위치 / 종료 -->
+      <section class="card">
+        <h2>프로그램</h2>
+        <ul class="notes">
+          <li>데이터: 사용자 폴더의 <code>Cockpit</code> (output · data · logs)</li>
+          <li>백업: <code>Cockpit\data</code> 폴더를 복사해 두면 매매일지가 보존됩니다</li>
+          <li>새 버전: 프로그램 폴더만 교체하면 데이터는 그대로 유지됩니다</li>
+        </ul>
+        <button th:if="${desktop}" type="button" id="shutdown" class="ghost mt">프로그램 종료</button>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script th:inline="javascript">
+  /* 실행 중인 배치 상태를 3초마다 갱신, 끝나면 새로고침 */
+  (function () {
+    const csrf = /*[[${_csrf.token}]]*/ '';
+    const csrfHeader = /*[[${_csrf.headerName}]]*/ 'X-CSRF-TOKEN';
+    document.querySelectorAll('.batch-box').forEach((box) => {
+      const m = box.dataset.market;
+      const btn = box.querySelector('button');
+      if (!btn || !btn.disabled) return;
+      const timer = setInterval(async () => {
+        const r = await fetch(`/api/batch/${m}`, { headers: { Accept: 'application/json' } });
+        if (!r.ok) return;
+        const s = await r.json();
+        box.querySelector('.log').textContent = (s.tail || []).join('\n');
+        if (!s.running) { clearInterval(timer); location.reload(); }
+      }, 3000);
+    });
+    const sd = document.getElementById('shutdown');
+    if (sd) sd.addEventListener('click', async () => {
+      if (!confirm('프로그램을 종료할까요? (다시 켜려면 Cockpit 아이콘 실행)')) return;
+      const r = await fetch('/settings/shutdown', { method: 'POST', headers: { [csrfHeader]: csrf } });
+      const body = await r.json().catch(() => ({ message: '종료 요청을 보냈습니다.' }));
+      document.querySelector('main').innerHTML = `<p class="alert good">✓ ${body.message}</p>`;
+    });
+  })();
+</script>
+</body>
+</html>

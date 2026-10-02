@@ -1,0 +1,110 @@
+# Windows 데스크톱 패키지 빌드: Cockpit.exe(Java 런타임 포함) + screener.exe(Python 포함) → ZIP
+# - 브랜치 push / 수동 실행: Actions 탭의 실행 결과 하단 'Artifacts'에서 ZIP 다운로드
+# - v* 태그 push: GitHub Releases 에 ZIP 첨부
+name: windows-package
+
+on:
+  push:
+    branches: [master, claude/stock-screening-ai-strategy-vae6o1]
+    tags: ["v*"]
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17", cache: maven }
+      - name: 웹앱 테스트
+        run: cd web && ./mvnw -B test
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - name: 스크리너 문법·의존성 점검
+        run: |
+          pip install -r requirements.txt
+          python -m py_compile screener/*.py
+          cd screener && python cli.py check
+
+  package:
+    needs: test
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17", cache: maven }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+
+      - name: 웹앱 JAR 빌드
+        run: |
+          cd web
+          ./mvnw.cmd -B -DskipTests package
+
+      - name: screener.exe 빌드 (PyInstaller)
+        run: |
+          pip install -r requirements.txt pyinstaller
+          pyinstaller --noconfirm --onedir --name screener `
+            --paths screener `
+            --collect-all pykrx --collect-all yfinance --collect-all curl_cffi `
+            --distpath build/pyi --workpath build/pyi-work --specpath build `
+            screener/cli.py
+          ./build/pyi/screener/screener.exe check
+          if ($LASTEXITCODE -ne 0) { throw "screener.exe 자가 진단 실패" }
+
+      - name: Cockpit.exe 빌드 (jpackage, Java 런타임 포함)
+        run: |
+          New-Item -ItemType Directory -Force build/jin | Out-Null
+          Copy-Item web/target/cockpit-0.1.0.jar build/jin/cockpit.jar
+          jpackage --type app-image --name Cockpit `
+            --input build/jin --main-jar cockpit.jar `
+            --dest build/app --app-version 0.1.0 --vendor hogy `
+            --java-options "-Dcockpit.desktop=true" `
+            --java-options "-Dfile.encoding=UTF-8" `
+            --java-options "-Xmx512m"
+          Copy-Item -Recurse build/pyi/screener build/app/Cockpit/screener
+          Copy-Item "packaging/README-실행방법.txt" build/app/Cockpit/
+
+      - name: 실행 스모크 테스트 (기동 → 최초설정 화면 응답 → 종료)
+        run: |
+          $p = Start-Process -FilePath build/app/Cockpit/Cockpit.exe -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $r = Invoke-WebRequest -Uri http://localhost:18080/setup -UseBasicParsing -TimeoutSec 3
+              if ($r.StatusCode -eq 200 -and $r.Content -match "Cockpit") { $ok = $true; break }
+            } catch { }
+          }
+          Get-ChildItem "$env:USERPROFILE/Cockpit/logs" -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 40 }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Process java*, Cockpit* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "Cockpit.exe 기동 확인 실패" }
+
+      - name: 해외 스크리너 실데이터 점검 (네트워크 의존 → 실패해도 빌드 유지)
+        continue-on-error: true
+        run: |
+          ./build/app/Cockpit/screener/screener.exe us --account 20000 --universe NVDA,AAPL,MSFT,AVGO,PLTR --out build/smoke
+          Get-Content build/smoke/plans_us.json -TotalCount 20
+
+      - name: ZIP 압축
+        run: Compress-Archive -Path build/app/Cockpit -DestinationPath Cockpit-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cockpit-windows
+          path: Cockpit-windows.zip
+          retention-days: 30
+
+      - name: 릴리스 첨부 (v* 태그)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Cockpit-windows.zip

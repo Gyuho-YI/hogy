@@ -7,6 +7,7 @@
   <p class="muted">개인 전용 매매 계획 대시보드</p>
   <p th:if="${param.error}" class="alert critical" role="alert">⛔ 아이디 또는 비밀번호가 올바르지 않습니다.</p>
   <p th:if="${param.logout}" class="alert good">✓ 로그아웃되었습니다.</p>
+  <p th:if="${param.setup}" class="alert good">✓ 비밀번호를 설정했습니다. 로그인하세요.</p>
   <form th:action="@{/login}" method="post">
     <label>아이디 <input name="username" autocomplete="username" required autofocus></label>
     <label>비밀번호 <input name="password" type="password" autocomplete="current-password" required></label>

@@ -62,9 +62,14 @@ def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, l
             df = px[t].dropna() if len(tickers) > 1 else px.dropna()
         except KeyError:
             continue
+        if df.empty:  # 다운로드 실패 종목
+            continue
         tt = trend_template(df)
         rows.append({"ticker": t, "df": df, "tt": tt, "wret": weighted_return(df["Close"])})
 
+    if not rows:
+        # 전부 실패 = 네트워크/차단 문제. 빈 결과로 덮어쓰지 않도록 예외로 중단(이전 계획 유지)
+        raise RuntimeError("가격 데이터를 하나도 받지 못했습니다. 네트워크 또는 Yahoo 접속 상태를 확인하세요.")
     base = pd.DataFrame(rows).dropna(subset=["wret"])
     if base.empty:
         return base, []
@@ -129,11 +134,14 @@ def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, l
     return (res.sort_values(["VCP", "RS"], ascending=False) if not res.empty else res), web
 
 
+# RS Rating 은 상대 지표이므로 유니버스가 클수록 의미가 있습니다(예: S&P500 + Nasdaq100).
+DEFAULT_UNIVERSE = ["NVDA", "AAPL", "PLTR", "CRWD", "SMCI", "CELH", "TSLA", "META",
+                    "MSFT", "AMZN", "GOOGL", "AVGO", "AMD", "NFLX", "ANET", "APP",
+                    "AXON", "DDOG", "NET", "SHOP", "UBER", "TTD", "ELF", "DECK"]
+
+
 if __name__ == "__main__":
-    # RS Rating 은 상대 지표이므로 유니버스가 클수록 의미가 있습니다(예: S&P500 + Nasdaq100).
-    universe = ["NVDA", "AAPL", "PLTR", "CRWD", "SMCI", "CELH", "TSLA", "META",
-                "MSFT", "AMZN", "GOOGL", "AVGO", "AMD", "NFLX", "ANET", "APP",
-                "AXON", "DDOG", "NET", "SHOP", "UBER", "TTD", "ELF", "DECK"]
+    universe = DEFAULT_UNIVERSE
     pd.set_option("display.width", 200)
     import os
     account = float(os.environ.get("ACCOUNT_US", 20_000))  # 계좌 평가금액(USD)

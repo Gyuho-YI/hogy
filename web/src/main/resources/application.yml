@@ -2,8 +2,10 @@
 app:
   data-dir: ${APP_DATA_DIR:../output}          # Python 스크리너 출력 폴더
   username: ${APP_USER:owner}
-  password: ${APP_PASSWORD:}                  # 비우면 기동 시 임시 비밀번호를 로그에 출력
-  remember-me-key: ${APP_REMEMBER_KEY:change-this-remember-me-key}
+  password: ${APP_PASSWORD:}                  # 비우면 최초 접속 시 /setup 화면에서 설정
+  remember-me-key: ${APP_REMEMBER_KEY:}         # 비우면 설치별 임의 키(DB) 사용
+  batch-enabled: ${APP_BATCH_ENABLED:false}   # true 면 웹앱이 스크리닝 배치를 직접 실행/예약
+  screener-command: ${APP_SCREENER_COMMAND:}  # 비우면 screener.exe → .venv python cli.py 자동 탐색
 
 spring:
   application:

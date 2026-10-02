@@ -11,7 +11,8 @@
     <p class="muted" th:if="${snap.generatedAt}">기준 <span th:text="${snap.generatedAt}"></span>
       · 계좌 <span th:text="${#numbers.formatDecimal(snap.account, 1, 'COMMA', 0, 'POINT')}"></span></p>
   </div>
-  <p th:if="${snap.loadError}" class="alert warning" role="status">⚠ <span th:text="${snap.loadError}"></span></p>
+  <p th:if="${snap.loadError}" class="alert warning" role="status">⚠ <span th:text="${snap.loadError}"></span>
+    → <a th:href="@{/settings}">설정에서 스크리닝 실행</a></p>
 
   <!-- ① 5대 KPI: F-pattern 첫 줄 -->
   <section class="kpis" aria-label="핵심 지표">

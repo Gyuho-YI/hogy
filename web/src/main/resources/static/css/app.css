@@ -181,3 +181,17 @@ form.inline input { width: auto; max-width: 140px; padding: 4px 6px; }
 .login-card form { display: grid; gap: 12px; margin-top: 12px; }
 .check { display: flex; align-items: center; gap: 8px; }
 .check input { width: auto; }
+
+/* ---- 설정: 배치 실행 ---- */
+.batch-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 640px) { .batch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.batch-box { border: 1px solid var(--border); border-radius: 8px; padding: 12px; min-width: 0; }
+.batch-box h3 { font-size: 0.9rem; margin: 0 0 6px; }
+.batch-box form { margin: 8px 0; }
+.batch-box button:disabled { opacity: 0.5; cursor: progress; }
+.log {
+  max-height: 260px; overflow: auto; margin: 6px 0 0; padding: 8px;
+  background: var(--page); border: 1px solid var(--grid); border-radius: 6px;
+  font-size: 0.72rem; white-space: pre-wrap; word-break: break-all;
+}
+code { font-size: 0.85em; }

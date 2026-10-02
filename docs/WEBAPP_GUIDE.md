@@ -57,7 +57,22 @@ hogy/
 └── data/                  매매일지 DB (git 제외, 백업 대상)
 ```
 
-## D-1. 설치 — Windows 개인 PC (권장 경로)
+## D-0. 설치 — Windows 프로그램 형태 (가장 쉬움, 권장)
+
+설치할 것 없음(Java·Python 런타임 포함).
+
+1. GitHub 저장소 → **Actions** 탭 → `windows-package` → 최신 성공(✅) 실행 클릭 → 하단 **Artifacts** 의 `Cockpit-windows` 다운로드
+   (v 태그를 붙인 버전은 **Releases** 에서 `Cockpit-windows.zip` 다운로드)
+2. 압축 해제 → `Cockpit` 폴더를 `C:\Cockpit` 등에 둠
+3. `Cockpit.exe` 더블클릭 → 브라우저 자동 실행 → 비밀번호 설정(아이디 owner)
+4. **설정** → 계좌 금액 저장 → **지금 실행**. 이후 프로그램이 켜져 있으면 국내 평일 18:35, 해외 화~토 07:10 자동 실행
+5. (선택) 윈도우 시작 시 자동 실행: `Win+R` → `shell:startup` → `Cockpit.exe` 바로 가기 넣기
+
+- 데이터는 `C:\Users\<사용자>\Cockpit` (output · data · logs) 에 저장 → 새 버전은 프로그램 폴더만 교체
+- 접속 주소: `http://localhost:18080` (이 PC 에서만 접속 가능)
+- 서명되지 않은 프로그램이라 첫 실행 시 SmartScreen 경고 → [추가 정보] → [실행]
+
+## D-1. 설치 — Windows 개인 PC (소스에서 직접 실행)
 
 1. 설치: [Python 3.11+](https://www.python.org/downloads/) (설치 시 *Add to PATH* 체크), [JDK 17 Temurin](https://adoptium.net/), [Git](https://git-scm.com/)
 2. 코드 받기: `git clone -b claude/stock-screening-ai-strategy-vae6o1 https://github.com/gyuho-yi/hogy.git C:\hogy`

@@ -8,13 +8,15 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-OUT_DIR = Path(__file__).resolve().parent.parent / "output"
+# 출력 폴더: 데스크톱 프로그램(웹앱)이 COCKPIT_OUTPUT_DIR 로 지정, 없으면 저장소의 output/
+OUT_DIR = Path(os.environ.get("COCKPIT_OUTPUT_DIR") or Path(__file__).resolve().parent.parent / "output")
 
 
 def export_json(df: pd.DataFrame, market: str) -> Path:
