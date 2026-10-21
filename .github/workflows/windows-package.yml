@@ -1,6 +1,6 @@
 # Windows 데스크톱 패키지 빌드: Cockpit.exe(Java 런타임 포함) + screener.exe(Python 포함) → ZIP
 # - 브랜치 push / 수동 실행: Actions 탭의 실행 결과 하단 'Artifacts'에서 ZIP 다운로드
-# - v* 태그 push: GitHub Releases 에 ZIP 첨부
+# - v* 태그 push 또는 수동 실행 시 release_tag 입력: GitHub Releases 에 ZIP 영구 첨부
 name: windows-package
 
 on:
@@ -9,6 +9,11 @@ on:
     tags: ["v*"]
     paths-ignore: ["docs/**", "**.md"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Releases 에 영구 등록할 태그(예: v0.1.0). 비우면 빌드만"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -60,12 +65,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "screener.exe 자가 진단 실패" }
 
       - name: Cockpit.exe 빌드 (jpackage, Java 런타임 포함)
+        env:
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
+          # 앱 버전: 태그(v1.2.3)에서 추출, 형식이 아니면 0.1.0
+          $ver = $env:TAG -replace '^v', ''
+          if ($ver -notmatch '^\d+(\.\d+){0,2}$') { $ver = '0.1.0' }
           New-Item -ItemType Directory -Force build/jin | Out-Null
           Copy-Item web/target/cockpit-0.1.0.jar build/jin/cockpit.jar
           jpackage --type app-image --name Cockpit `
             --input build/jin --main-jar cockpit.jar `
-            --dest build/app --app-version 0.1.0 --vendor hogy `
+            --dest build/app --app-version $ver --vendor hogy `
             --java-options "-Dcockpit.desktop=true" `
             --java-options "-Dfile.encoding=UTF-8" `
             --java-options "-Xmx512m"
@@ -103,8 +113,19 @@ jobs:
           path: Cockpit-windows.zip
           retention-days: 30
 
-      - name: 릴리스 첨부 (v* 태그)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: 릴리스 영구 등록 (v* 태그 또는 release_tag 입력)
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Cockpit ${{ inputs.release_tag || github.ref_name }} (Windows)
+          body: |
+            ## 설치 없이 실행
+            1. 아래 **Cockpit-windows.zip** 다운로드 → 압축 해제
+            2. `Cockpit.exe` 더블클릭 (SmartScreen 경고 시 [추가 정보] → [실행])
+            3. 브라우저에서 비밀번호 설정(아이디 owner) → [설정]에서 계좌 금액 입력 → [지금 실행]
+
+            자세한 사용법은 ZIP 안의 `README-실행방법.txt` 참고.
+            매매 '추천' 도구이며 주문을 실행하지 않습니다.
           files: Cockpit-windows.zip
