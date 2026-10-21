@@ -1,13 +1,9 @@
 package com.hogy.cockpit.plan;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,8 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hogy.cockpit.config.AppProperties;
 
 /**
- * plans_{market}.json 파일 로더.
- * 파일 수정 시각이 바뀔 때만 다시 읽습니다(배치가 새 파일을 쓰면 재기동 없이 자동 반영).
+ * plans_{market}.json 파일 로더(수정 시각 기반 캐시: {@link JsonFileCache}).
  */
 @Component
 public class PlanRepository {
@@ -29,15 +24,11 @@ public class PlanRepository {
     public static final Set<String> MARKETS = Set.of("kr", "us");
 
     private final Path dataDir;
-    private final ObjectMapper objectMapper;
-    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
-
-    private record Cached(FileTime modified, PlanSnapshot snapshot) {
-    }
+    private final JsonFileCache<PlanSnapshot> files;
 
     public PlanRepository(AppProperties props, ObjectMapper objectMapper) {
         this.dataDir = Path.of(props.dataDir()).toAbsolutePath().normalize();
-        this.objectMapper = objectMapper;
+        this.files = new JsonFileCache<>(objectMapper, PlanSnapshot.class);
         log.info("스크리너 데이터 폴더: {}", dataDir);
     }
 
@@ -53,21 +44,18 @@ public class PlanRepository {
     public PlanSnapshot load(String market) {
         String m = normalize(market);
         Path file = dataDir.resolve("plans_" + m + ".json");
-        if (!Files.exists(file)) {
-            return PlanSnapshot.empty(m, "아직 스크리닝 결과가 없습니다: " + file.getFileName());
-        }
         try {
-            FileTime modified = Files.getLastModifiedTime(file);
-            Cached cached = cache.get(m);
-            if (cached != null && cached.modified().equals(modified)) {
-                return cached.snapshot();
-            }
-            PlanSnapshot snap = objectMapper.readValue(file.toFile(), PlanSnapshot.class);
-            cache.put(m, new Cached(modified, snap));
-            return snap;
+            PlanSnapshot snap = files.read(file);
+            return snap != null ? snap
+                    : PlanSnapshot.empty(m, "아직 스크리닝 결과가 없습니다: " + file.getFileName());
         } catch (IOException e) {
             log.error("계획 파일 파싱 실패: {}", file, e);
             return PlanSnapshot.empty(m, "계획 파일을 읽지 못했습니다: " + e.getMessage());
         }
+    }
+
+    /** 같은 출력 폴더의 다른 파일(sectors_*.json 등) 경로. */
+    public Path dataFile(String name) {
+        return dataDir.resolve(name);
     }
 }

@@ -25,6 +25,8 @@ import com.hogy.cockpit.journal.TradeForm;
 import com.hogy.cockpit.plan.PlanItem;
 import com.hogy.cockpit.plan.PlanRepository;
 import com.hogy.cockpit.plan.PlanSnapshot;
+import com.hogy.cockpit.sector.SectorService;
+import com.hogy.cockpit.sector.SectorSnapshot;
 import com.hogy.cockpit.settings.SettingsService;
 
 /** 화면(Thymeleaf) 컨트롤러: 로그인 / 대시보드 / 매매일지. */
@@ -35,12 +37,15 @@ public class PageController {
     private final KpiService kpis;
     private final JournalService journal;
     private final SettingsService settings;
+    private final SectorService sectors;
 
-    public PageController(PlanRepository plans, KpiService kpis, JournalService journal, SettingsService settings) {
+    public PageController(PlanRepository plans, KpiService kpis, JournalService journal, SettingsService settings,
+                          SectorService sectors) {
         this.plans = plans;
         this.kpis = kpis;
         this.journal = journal;
         this.settings = settings;
+        this.sectors = sectors;
     }
 
     @GetMapping("/login")
@@ -63,7 +68,19 @@ public class PageController {
         model.addAttribute("items", snap.sortedItems());
         model.addAttribute("kpi", kpis.compute(snap, m));
         model.addAttribute("decimals", "us".equals(m) ? 2 : 0);
+        // 주도 섹터·테마 소속 종목 배지(국내만: 해외는 ETF 기준이라 종목 매핑 없음)
+        model.addAttribute("hot", sectors.load(m).safeHotCodes());
         return "dashboard";
+    }
+
+    @GetMapping("/sectors/{market}")
+    public String sectorPage(@PathVariable String market, Model model) {
+        String m = PlanRepository.normalize(market);
+        SectorSnapshot snap = sectors.load(m);
+        model.addAttribute("market", m);
+        model.addAttribute("snap", snap);
+        model.addAttribute("sum", SectorService.summarize(snap));
+        return "sectors";
     }
 
     /** 매매일지. code 가 있으면 해당 계획 값으로 매수 폼을 미리 채움. */

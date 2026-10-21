@@ -52,6 +52,25 @@ class WebFlowTest {
     }
 
     @Test
+    void 섹터_레이더와_주도_배지() throws Exception {
+        mvc.perform(get("/sectors/kr").with(user("owner")))
+           .andExpect(status().isOk())
+           .andExpect(content().string(containsString("자금 1위 섹터")))
+           .andExpect(content().string(containsString("전기장비")))
+           .andExpect(content().string(containsString("신규 유입")))
+           .andExpect(content().string(containsString("전력기기·전력망")));
+        mvc.perform(get("/sectors/us").with(user("owner")))
+           .andExpect(status().isOk())
+           .andExpect(content().string(containsString("상대강도 1위")));
+        mvc.perform(get("/api/sectors/kr").with(user("owner")))
+           .andExpect(jsonPath("$.sectors[0].avg_share").isNumber())
+           .andExpect(jsonPath("$.hotCodes['267260']").value(org.hamcrest.Matchers.startsWith("주도")));
+        // 계획표: 주도 섹터(전기전자 상위 3) 소속 SK하이닉스에 배지
+        mvc.perform(get("/dashboard/kr").with(user("owner")))
+           .andExpect(content().string(containsString("badge hot")));
+    }
+
+    @Test
     void API는_손익비를_포함한_JSON() throws Exception {
         mvc.perform(get("/api/plans/kr").with(user("owner")))
            .andExpect(status().isOk())

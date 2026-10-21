@@ -3,6 +3,7 @@
 
   python cli.py kr --account 30000000 [--stats journal_stats.csv] [--out 출력폴더]
   python cli.py us --account 20000 [--universe NVDA,AAPL,...] [--out 출력폴더]
+  python cli.py sectors kr   # 섹터·테마 레이더만(kr/us 실행 시 자동 포함)
   python cli.py check        # 설치 자가 진단
 
 - PyInstaller 로 screener.exe 하나로 묶여 웹앱의 '지금 스크리닝 실행' 버튼/자동 스케줄에서 호출됩니다.
@@ -32,6 +33,14 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     for p in (kr, us):
         p.add_argument("--out", default=None, help="출력 폴더(plans_*.json)")
 
+    sec = sub.add_parser("sectors", help="섹터·테마 레이더만 실행")
+    sec.add_argument("which", choices=["kr", "us"])
+    sec.add_argument("--out", default=None)
+    sec.add_argument("--no-news", action="store_true", help="국내 뉴스 테마 분류 생략")
+
+    for p in (kr, us):
+        p.add_argument("--no-sectors", action="store_true", help="섹터·테마 레이더 생략")
+
     sub.add_parser("check", help="실행 파일 자가 진단(모든 모듈 로드 확인)")
     return ap.parse_args(argv)
 
@@ -39,8 +48,9 @@ def _parse(argv: list[str]) -> argparse.Namespace:
 def self_check() -> int:
     """패키징(PyInstaller) 누락 모듈 검출용: 실제 실행 경로의 모든 모듈을 import."""
     import importlib
-    mods = ["pandas", "numpy", "pykrx", "yfinance", "common", "accumulation", "support",
-            "trade_plan", "export", "kr_screener", "kr_accumulation", "plan_screener", "us_screener"]
+    mods = ["pandas", "numpy", "requests", "pykrx", "yfinance", "common", "accumulation", "support",
+            "trade_plan", "export", "kr_screener", "kr_accumulation", "plan_screener", "us_screener",
+            "sector_radar", "sector_data"]
     for m in mods:
         mod = importlib.import_module(m)
         print(f"OK {m} {getattr(mod, '__version__', '')}".rstrip())
@@ -51,14 +61,13 @@ def run(argv: list[str]) -> int:
     a = _parse(argv)
     if a.market == "check":
         return self_check()
+    if a.market == "sectors":
+        _set_out(a.out)
+        return run_sectors(a.which, news=not a.no_news)
     if a.account <= 0:
         print("계좌 금액은 0보다 커야 합니다", file=sys.stderr)
         return 2
-    if a.out:
-        out = Path(a.out).resolve()
-        out.mkdir(parents=True, exist_ok=True)
-        os.environ["COCKPIT_OUTPUT_DIR"] = str(out)
-        os.chdir(out)  # 부수 CSV(trade_plan_*.csv 등)도 같은 폴더에 저장
+    _set_out(a.out)
 
     # 출력 폴더 설정 후 import 해야 export.OUT_DIR 에 반영됨
     import pandas as pd
@@ -78,6 +87,30 @@ def run(argv: list[str]) -> int:
 
     print(res.to_string(index=False) if not res.empty else "후보 없음")
     print(f"PLANS_JSON={path}")
+
+    # 섹터·테마 레이더: 실패해도 매매 계획 결과는 유지(종료 코드 0)
+    if not a.no_sectors:
+        try:
+            run_sectors(a.market, news=True)
+        except Exception as e:
+            print(f"  ! 섹터 레이더 실패(매매 계획은 정상 저장됨): {e}")
+    return 0
+
+
+def _set_out(out_dir: str | None) -> None:
+    if out_dir:
+        out = Path(out_dir).resolve()
+        out.mkdir(parents=True, exist_ok=True)
+        os.environ["COCKPIT_OUTPUT_DIR"] = str(out)
+        os.chdir(out)  # 부수 CSV(trade_plan_*.csv 등)도 같은 폴더에 저장
+
+
+def run_sectors(market: str, news: bool = True) -> int:
+    import sector_data
+    from export import OUT_DIR
+    out = Path(os.environ.get("COCKPIT_OUTPUT_DIR") or OUT_DIR)
+    path = sector_data.run_kr(out, with_news=news) if market == "kr" else sector_data.run_us(out)
+    print(f"SECTORS_JSON={path}")
     return 0
 
 

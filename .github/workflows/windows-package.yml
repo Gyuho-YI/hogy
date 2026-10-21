@@ -33,6 +33,8 @@ jobs:
         run: |
           pip install -r requirements.txt
           python -m py_compile screener/*.py
+          pip install pytest
+          python -m pytest -q screener/tests
           cd screener && python cli.py check
 
   package:
@@ -98,11 +100,12 @@ jobs:
           Get-Process java*, Cockpit* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           if (-not $ok) { throw "Cockpit.exe 기동 확인 실패" }
 
-      - name: 해외 스크리너 실데이터 점검 (네트워크 의존 → 실패해도 빌드 유지)
+      - name: 해외 스크리너·섹터 레이더 실데이터 점검 (네트워크 의존 → 실패해도 빌드 유지)
         continue-on-error: true
         run: |
           ./build/app/Cockpit/screener/screener.exe us --account 20000 --universe NVDA,AAPL,MSFT,AVGO,PLTR --out build/smoke
           Get-Content build/smoke/plans_us.json -TotalCount 20
+          Get-Content build/smoke/sectors_us.json -TotalCount 40
 
       - name: ZIP 압축
         run: Compress-Archive -Path build/app/Cockpit -DestinationPath Cockpit-windows.zip

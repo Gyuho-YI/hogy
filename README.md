@@ -17,6 +17,7 @@
 | `screener/support.py` | 공통 | 지지 구간 산출(돌파피벗·AVWAP·매물대·점화봉·20일선 병합) + 추격매수 판정·포지션 사이징 |
 | `screener/trade_plan.py` | 공통 | 하프 켈리(Wilson 하한·상한 캡) 사이징 + 매수구간·손절·2R/3R 분할익절·트레일링·클라이맥스 + 호가단위 보정 |
 | `screener/plan_screener.py` | 국내 | 매집/점화 후보 → 종목별 매매 계획표 CSV, 포트폴리오 총 위험(Heat) 점검 |
+| `screener/sector_radar.py` · `sector_data.py` | 공통 | 섹터·테마 레이더: 업종 거래대금 쏠림 배수·확산도, 뉴스 헤드라인 테마 분류, 해외 섹터/테마 ETF |
 | `screener/export.py` | 공통 | 웹앱 연동용 `output/latest_{kr,us}.json` 내보내기 |
 | `screener/common.py` | 공통 | YoY 예외 처리(분모 0·적자 전환), 트렌드 템플릿, VCP 탐지 |
 

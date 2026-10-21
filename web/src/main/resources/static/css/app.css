@@ -195,3 +195,17 @@ form.inline input { width: auto; max-width: 140px; padding: 4px 6px; }
   font-size: 0.72rem; white-space: pre-wrap; word-break: break-all;
 }
 code { font-size: 0.85em; }
+
+/* ---- 섹터 레이더 ---- */
+.kpi-value.kpi-text { font-size: 1.15rem; line-height: 1.35; word-break: keep-all; }
+.badge.hot { margin-left: 4px; border-color: var(--series-2); font-size: 0.72rem; }
+.badge.critical { border-color: var(--critical); color: var(--critical); }
+.row-hot td:first-child { box-shadow: inset 3px 0 0 var(--series-2); }
+.theme-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 900px) { .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1300px) { .theme-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.theme { border: 1px solid var(--border); border-radius: 8px; padding: 12px; min-width: 0; }
+.theme h3 { font-size: 0.92rem; margin: 0 0 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.ellipsis { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.logout button { white-space: nowrap; }
