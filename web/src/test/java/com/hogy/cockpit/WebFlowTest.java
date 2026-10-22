@@ -48,7 +48,11 @@ class WebFlowTest {
            .andExpect(content().string(containsString("매수 가능")));
         mvc.perform(get("/dashboard/us").with(user("owner")))
            .andExpect(status().isOk())
-           .andExpect(content().string(containsString("돌파 대기")));
+           .andExpect(content().string(containsString("돌파 대기")))
+           // 매수 조건 미달 종목도 '관찰' + 사유로 노출, 단계 통계 표시
+           .andExpect(content().string(containsString("👁 관찰")))
+           .andExpect(content().string(containsString("스크리닝 단계")))
+           .andExpect(content().string(containsString("펀더멘털 통과")));
     }
 
     @Test

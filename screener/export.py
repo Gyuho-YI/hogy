@@ -63,13 +63,17 @@ def plan_record(code: str, name: str, stage: str, plan, px: pd.DataFrame, histor
     }
 
 
-def export_plans(market: str, records: list[dict], account: float) -> Path:
-    """웹앱이 읽는 output/plans_{market}.json 저장."""
-    OUT_DIR.mkdir(exist_ok=True)
+def export_plans(market: str, records: list[dict], account: float, stats: dict | None = None) -> Path:
+    """
+    웹앱이 읽는 output/plans_{market}.json 저장.
+    stats: 단계별 통과 수(검사 → 수신 → 추세 → 펀더멘털 → 셋업). 결과 0건일 때 '정상 완료'임을 화면에 보여주는 근거.
+    """
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
         "market": market.upper(),
         "generatedAt": datetime.now().isoformat(timespec="seconds"),
         "account": account,
+        "stats": stats or {},
         "items": records,
     }
     path = OUT_DIR / f"plans_{market}.json"

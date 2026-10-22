@@ -7,7 +7,7 @@
   python cli.py check        # 설치 자가 진단
 
 - PyInstaller 로 screener.exe 하나로 묶여 웹앱의 '지금 스크리닝 실행' 버튼/자동 스케줄에서 호출됩니다.
-- 종료 코드: 0 성공, 1 실행 오류, 2 인자 오류
+- 종료 코드: 0 성공, 1 실행 오류, 2 인자 오류, 3 KRX 로그인 필요/실패, 4 KRX 접속 실패
 """
 from __future__ import annotations
 
@@ -45,6 +45,39 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     return ap.parse_args(argv)
 
 
+EXIT_KRX_LOGIN = 3   # 웹앱 BatchService.exitMessage 와 약속된 종료 코드
+EXIT_KRX_NETWORK = 4
+
+
+def ensure_krx_login() -> int:
+    """
+    KRX 정보데이터시스템은 회원 로그인이 필요(pykrx 1.2+ 가 KRX_ID/KRX_PW 환경변수로 로그인).
+    로그인 실패 상태로 진행하면 원인을 알기 어려운 빈 응답·컬럼 오류가 나므로 시작 전에 확인합니다.
+    """
+    if not (os.getenv("KRX_ID") and os.getenv("KRX_PW")):
+        print("KRX 로그인 정보가 없습니다. 설정 화면에서 KRX 계정을 입력하세요"
+              "(명령줄 실행 시 KRX_ID / KRX_PW 환경변수).", file=sys.stderr)
+        return EXIT_KRX_LOGIN
+    import requests
+    try:
+        # pykrx 는 패키지 import 시점에 로그인 세션을 만듦(네트워크 접속) → import 자체를 보호
+        from pykrx.website.comm.auth import get_auth_session
+        import pykrx.stock  # noqa: F401
+        session = get_auth_session()
+    except ImportError:          # 로그인 기능이 없는 구버전 pykrx
+        print("경고: pykrx 버전이 낮아 KRX 로그인을 지원하지 않습니다(pip install -U pykrx)", file=sys.stderr)
+        return 0
+    except requests.RequestException as e:
+        print(f"KRX 서버 접속 실패: 인터넷 연결·방화벽·회사망 차단 여부를 확인하세요. ({type(e).__name__})",
+              file=sys.stderr)
+        return EXIT_KRX_NETWORK
+    if session is None:
+        print("KRX 로그인 실패: 아이디/비밀번호를 확인하세요. 비밀번호 변경 요구 시 krx.co.kr 에서 변경 후 재입력.",
+              file=sys.stderr)
+        return EXIT_KRX_LOGIN
+    return 0
+
+
 def self_check() -> int:
     """패키징(PyInstaller) 누락 모듈 검출용: 실제 실행 경로의 모든 모듈을 import."""
     import importlib
@@ -63,6 +96,8 @@ def run(argv: list[str]) -> int:
         return self_check()
     if a.market == "sectors":
         _set_out(a.out)
+        if a.which == "kr" and (rc := ensure_krx_login()):
+            return rc
         return run_sectors(a.which, news=not a.no_news)
     if a.account <= 0:
         print("계좌 금액은 0보다 커야 합니다", file=sys.stderr)
@@ -75,15 +110,16 @@ def run(argv: list[str]) -> int:
 
     pd.set_option("display.width", 220)
     if a.market == "kr":
+        if rc := ensure_krx_login():
+            return rc
         import plan_screener
         stats = a.stats if a.stats and Path(a.stats).exists() else None
-        res, web = plan_screener.main(a.account, stats)
-        path = export_plans("kr", web, a.account)
+        res, web, funnel = plan_screener.main(a.account, stats)
+        path = export_plans("kr", web, a.account, funnel)
     else:
         import us_screener
-        universe = [t.strip().upper() for t in a.universe.split(",")] if a.universe else us_screener.DEFAULT_UNIVERSE
-        res, web = us_screener.screen(universe, account=a.account)
-        path = export_plans("us", web, a.account)
+        res, web, stats = us_screener.screen(_us_universe(a.universe, us_screener.DEFAULT_UNIVERSE), account=a.account)
+        path = export_plans("us", web, a.account, stats)
 
     print(res.to_string(index=False) if not res.empty else "후보 없음")
     print(f"PLANS_JSON={path}")
@@ -95,6 +131,23 @@ def run(argv: list[str]) -> int:
         except Exception as e:
             print(f"  ! 섹터 레이더 실패(매매 계획은 정상 저장됨): {e}")
     return 0
+
+
+def _us_universe(arg: str | None, default: list[str]) -> list[str]:
+    """
+    해외 검사 대상: --universe > 출력 폴더의 us_universe.txt(한 줄에 티커 1개, # 주석) > 기본 목록.
+    """
+    if arg:
+        return [t.strip().upper() for t in arg.split(",") if t.strip()]
+    from export import OUT_DIR
+    f = Path(os.environ.get("COCKPIT_OUTPUT_DIR") or OUT_DIR) / "us_universe.txt"
+    if f.exists():
+        tickers = [ln.split("#")[0].strip().upper() for ln in f.read_text(encoding="utf-8").splitlines()]
+        tickers = [t for t in tickers if t]
+        if tickers:
+            print(f"  사용자 유니버스 사용: {f.name} ({len(tickers)}종목)")
+            return tickers
+    return default
 
 
 def _set_out(out_dir: str | None) -> None:

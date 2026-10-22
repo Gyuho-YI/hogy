@@ -77,12 +77,28 @@ def load_prices(tickers: list[str]) -> dict[str, pd.DataFrame]:
     return frames
 
 
-def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, list[dict]]:
-    """account: 계좌 평가금액(USD). 해외 전략 백테스트가 없으므로 고정 위험 1%로 사이징."""
+WATCH_STAGE = "관찰(추세 통과)"
+
+
+def _watch(df: pd.DataFrame, ticker: str, edge, account: float, reasons: list[str]) -> dict:
+    """매수 조건 미달이지만 추세는 통과한 종목 → 화면에 '관찰'로 노출(탈락 사유 포함)."""
+    p = build_plan(df, WATCH_STAGE, edge, account, market="US")   # 매수 구간 없음(관망)
+    p.notes = reasons
+    return plan_record(ticker, ticker, WATCH_STAGE, p, df)
+
+
+def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, list[dict], dict]:
+    """
+    account: 계좌 평가금액(USD). 해외 전략 백테스트가 없으므로 고정 위험 1%로 사이징.
+    반환: (상세 표, 웹 레코드, 단계별 통계)
+    - 웹 레코드: 매수 후보(돌파 대기·점화) + 추세 통과 종목('관찰', 탈락 사유 포함) → 결과가 0건이어도 이유를 확인 가능
+    """
     edge = edge_from_returns(pd.Series(dtype=float), "해외 백테스트 없음")
     plans, web = [], []
+    stats = {"scanned": len(tickers), "received": 0, "trend": 0, "fundamental": 0, "setup": 0}
     print(f"[1/3] 가격 데이터 일괄 수집: {len(tickers)}종목")
     frames = load_prices(tickers)
+    stats["received"] = len(frames)
 
     # --- [1] 기술적 필터 (펀더멘털 API 호출 전에 먼저 걸러 호출 수 최소화) ---
     rows = []
@@ -95,44 +111,60 @@ def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, l
         raise RuntimeError("가격 데이터를 하나도 받지 못했습니다. 네트워크 또는 Yahoo 접속 상태를 확인하세요.")
     base = pd.DataFrame(rows).dropna(subset=["wret"])
     if base.empty:
-        return base, []
+        return base, [], stats
     base["rs"] = rs_rank(base["wret"])
     stage1 = base[base["tt"].map(lambda x: x["pass"]) & (base["rs"] >= MIN_RS)]
+    stats["trend"] = len(stage1)
     print(f"[2/3] 트렌드 템플릿 + RS>={MIN_RS} 통과: {len(stage1)}종목")
 
     # --- [2] 펀더멘털 필터 + VCP ---
     out = []
-    for _, r in stage1.iterrows():
-        tk = yf.Ticker(r["ticker"])
+    for _, r in stage1.sort_values("rs", ascending=False).iterrows():
+        t, df = r["ticker"], r["df"]
+        rs_note = f"RS {r['rs']:.0f} · 52주 고점 대비 {r['tt']['pct_from_high'] * 100:+.1f}%"
+        tk = yf.Ticker(t)
         try:
             g = quarterly_revenue_yoy(tk)
             de = tk.info.get("debtToEquity")
-        except Exception as e:  # 통신 오류는 로그를 남기고 건너뜀
-            print(f"  ! {r['ticker']} 재무 조회 실패: {e}")
+        except Exception as e:  # 통신 오류는 '관찰'로 남기고 계속
+            print(f"  ! {t} 재무 조회 실패: {e}")
+            web.append(_watch(df, t, edge, account, [rs_note, "재무 데이터 조회 실패 → 펀더멘털 미확인"]))
             continue
         finally:
             time.sleep(0.3)  # 성공/실패 무관하게 딜레이 적용
 
-        if g.rate is None or g.rate < MIN_REV_YOY:
-            continue
+        fails = []
+        if g.rate is None:
+            fails.append("매출 성장률 계산불가")
+        elif g.rate < MIN_REV_YOY:
+            fails.append(f"매출 YoY {g.rate * 100:.0f}% < {MIN_REV_YOY * 100:.0f}%")
         if de is not None and de > MAX_DEBT_EQUITY:
+            fails.append(f"부채비율 {de:.0f}% > {MAX_DEBT_EQUITY}%")
+        if fails:
+            web.append(_watch(df, t, edge, account, [rs_note, "펀더멘털 미달: " + ", ".join(fails)]))
             continue
+        stats["fundamental"] += 1
 
-        v = detect_vcp(r["df"])
-        # 매매 계획: 돌파 당일/돌파 후 → '점화', VCP 형성 중 → '돌파 대기'(Buy Stop), 그 외 → 계획 없음
-        close = float(r["df"]["Close"].iloc[-1])
+        v = detect_vcp(df)
+        # 매매 계획: 돌파 당일/돌파 후 → '점화', VCP 형성 중 → '돌파 대기'(Buy Stop), 그 외 → 관찰
+        close = float(df["Close"].iloc[-1])
         if v.pivot and close > v.pivot:
             stage = "점화"
         elif v.is_vcp:
             stage = "돌파 대기"
         else:
             stage = "추세만 충족"
-        p = build_plan(r["df"], stage, edge, account, pivot=v.pivot, market="US")
+        p = build_plan(df, stage, edge, account, pivot=v.pivot, market="US")
         plans.append(p)
-        if stage != "추세만 충족":
-            web.append(plan_record(r["ticker"], r["ticker"], stage, p, r["df"]))
+        if stage == "추세만 충족":
+            shrink = " → ".join(f"{c * 100:.0f}%" for c in v.contractions)
+            vcp_note = f"VCP 미형성({v.note or '거래량 미감소'})" + (f": 조정폭 {shrink}" if shrink else "")
+            web.append(_watch(df, t, edge, account, [rs_note, f"매출 YoY {g.rate * 100:.0f}% 충족", vcp_note]))
+        else:
+            stats["setup"] += 1
+            web.append(plan_record(t, t, stage, p, df))
         out.append({
-            "ticker": r["ticker"],
+            "ticker": t,
             "RS": round(r["rs"], 1),
             "rev_yoy%": round(g.rate * 100, 1),
             "yoy_label": g.label,
@@ -150,17 +182,29 @@ def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, l
             "메모": " / ".join(p.notes),
         })
 
-    print(f"[3/3] 펀더멘털 통과: {len(out)}종목")
+    print(f"[3/3] 펀더멘털 통과: {stats['fundamental']}종목 · 매수 셋업(VCP/돌파): {stats['setup']}종목")
     for w in portfolio_heat(plans):
         print("⚠", w)
     res = pd.DataFrame(out)
-    return (res.sort_values(["VCP", "RS"], ascending=False) if not res.empty else res), web
+    return (res.sort_values(["VCP", "RS"], ascending=False) if not res.empty else res), web, stats
 
 
 # RS Rating 은 상대 지표이므로 유니버스가 클수록 의미가 있습니다(예: S&P500 + Nasdaq100).
-DEFAULT_UNIVERSE = ["NVDA", "AAPL", "PLTR", "CRWD", "SMCI", "CELH", "TSLA", "META",
-                    "MSFT", "AMZN", "GOOGL", "AVGO", "AMD", "NFLX", "ANET", "APP",
-                    "AXON", "DDOG", "NET", "SHOP", "UBER", "TTD", "ELF", "DECK"]
+DEFAULT_UNIVERSE = [
+    # 나스닥100 주요 구성(2026 기준, 상장폐지·변경 티커는 다운로드 실패로 자동 제외)
+    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "AVGO", "TSLA", "COST", "NFLX", "AMD", "PEP",
+    "ADBE", "CSCO", "TMUS", "LIN", "INTU", "QCOM", "TXN", "AMGN", "ISRG", "CMCSA", "HON", "AMAT",
+    "BKNG", "VRTX", "ADP", "PANW", "ADI", "SBUX", "GILD", "MU", "LRCX", "MELI", "REGN", "KLAC",
+    "MDLZ", "SNPS", "CDNS", "PYPL", "CRWD", "MAR", "CTAS", "ORLY", "ASML", "ABNB", "FTNT", "CEG",
+    "WDAY", "MRVL", "CSX", "DASH", "ROP", "ADSK", "PCAR", "NXPI", "CHTR", "MNST", "CPRT", "PAYX",
+    "AEP", "ODFL", "KDP", "ROST", "FAST", "TTD", "EA", "VRSK", "DDOG", "CTSH", "BKR", "EXC", "XEL",
+    "GEHC", "LULU", "IDXX", "KHC", "CCEP", "FANG", "ZS", "ON", "TEAM", "CSGP", "BIIB", "DXCM",
+    "MDB", "WBD", "ARM", "GFS", "PLTR", "APP", "AXON", "SHOP", "MSTR",
+    # 성장·모멘텀 대표주
+    "NET", "UBER", "SMCI", "ANET", "VRT", "HOOD", "COIN", "RKLB", "ONON", "NU", "SOFI", "CAVA",
+    "DUOL", "TOST", "CRDO", "ALAB", "IONQ", "HIMS", "RDDT", "CELH", "ELF", "DECK", "SPOT", "NOW",
+    "CRM", "ORCL", "GE", "ETN", "PWR", "LLY", "NVO", "TSM", "SNOW", "MNDY", "CPNG", "FICO",
+]
 
 
 if __name__ == "__main__":
@@ -168,8 +212,8 @@ if __name__ == "__main__":
     pd.set_option("display.width", 200)
     import os
     account = float(os.environ.get("ACCOUNT_US", 20_000))  # 계좌 평가금액(USD)
-    res, web = screen(universe, account=account)
-    print("웹앱 계획 JSON:", export_plans("us", web, account))
+    res, web, stats = screen(universe, account=account)
+    print("웹앱 계획 JSON:", export_plans("us", web, account, stats))
     print(res.to_string(index=False))
     if not res.empty:
         from export import export_json

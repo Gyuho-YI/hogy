@@ -81,9 +81,14 @@ public class BatchService {
         if (account == null) {
             return "설정에서 " + ("kr".equals(m) ? "국내" : "해외") + " 계좌 금액을 먼저 입력하세요";
         }
+        // 국내: KRX 정보데이터시스템 로그인이 필요(pykrx 가 KRX_ID/KRX_PW 환경변수로 로그인)
+        SettingsService.KrxAccount krx = "kr".equals(m) ? settings.krxAccount() : null;
+        if ("kr".equals(m) && krx == null) {
+            return "국내 시세는 KRX 로그인이 필요합니다. 설정 → KRX 계정을 먼저 입력하세요";
+        }
         List<String> cmd = buildCommand(m, account);
         status.put(m, new BatchStatus(m, true, LocalDateTime.now(), null, null, "실행 중", List.of()));
-        executor.submit(() -> execute(m, cmd));
+        executor.submit(() -> execute(m, cmd, krx));
         return null;
     }
 
@@ -122,7 +127,18 @@ public class BatchService {
         }
     }
 
-    private void execute(String market, List<String> cmd) {
+    /** 스크리너 종료 코드 → 화면 메시지(screener/cli.py 와 약속). */
+    static String exitMessage(int exit) {
+        return switch (exit) {
+            case 0 -> "완료";
+            case 2 -> "실패(입력값 오류) — 아래 로그 확인";
+            case 3 -> "KRX 로그인 실패 — 설정의 KRX 아이디/비밀번호 확인(비밀번호 변경 요구 시 krx.co.kr 에서 변경)";
+            case 4 -> "KRX 서버 접속 실패 — 인터넷 연결·방화벽(회사망 차단) 확인";
+            default -> "실패(종료 코드 " + exit + ") — 아래 로그 확인";
+        };
+    }
+
+    private void execute(String market, List<String> cmd, SettingsService.KrxAccount krx) {
         LocalDateTime started = status(market).startedAt();
         Deque<String> tail = new ArrayDeque<>();
         Integer exit = null;
@@ -133,6 +149,11 @@ public class BatchService {
             ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
             pb.environment().put("PYTHONIOENCODING", "utf-8");
             pb.environment().put("PYTHONUTF8", "1");
+            if (krx != null) {
+                // 명령줄 인자가 아닌 환경변수로 전달 → 프로세스 목록·로그에 비밀번호 비노출
+                pb.environment().put("KRX_ID", krx.id());
+                pb.environment().put("KRX_PW", krx.password());
+            }
             log.info("배치 시작 [{}]: {}", market, String.join(" ", cmd));
             Process proc = pb.start();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8));
@@ -158,7 +179,7 @@ public class BatchService {
                 message = "시간 초과(" + TIMEOUT_MINUTES + "분)로 중단";
             } else {
                 exit = proc.exitValue();
-                message = exit == 0 ? "완료" : "실패(종료 코드 " + exit + ") — 아래 로그 확인";
+                message = exitMessage(exit);
             }
         } catch (IOException e) {
             message = "실행 파일을 찾지 못했습니다: " + e.getMessage();

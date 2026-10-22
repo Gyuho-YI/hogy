@@ -20,7 +20,7 @@ class KpiServiceTest {
 
     @Test
     void 관망_제외_총위험과_현금비중_계산() {
-        PlanSnapshot snap = new PlanSnapshot("KR", "2026-10-01", 10_000_000.0, List.of(
+        PlanSnapshot snap = new PlanSnapshot("KR", "2026-10-01", 10_000_000.0, java.util.Map.of(), List.of(
                 item("지금 매수 가능", 10_000, 9_400, 11_800, 100),   // 위험 60,000 / 투입 1,000,000 / 손익비 3.0
                 item("관망", 10_000, 9_000, 13_000, 0)), null);
         Kpi k = KpiService.compute(snap, 140_000, 2_000_000, JournalStats.from(List.of()));
@@ -35,7 +35,7 @@ class KpiServiceTest {
 
     @Test
     void 계좌정보가_없으면_비율은_null() {
-        PlanSnapshot snap = new PlanSnapshot("KR", null, null, List.of(item("지금 매수 가능", 10_000, 9_400, 11_800, 10)), null);
+        PlanSnapshot snap = new PlanSnapshot("KR", null, null, java.util.Map.of(), List.of(item("지금 매수 가능", 10_000, 9_400, 11_800, 10)), null);
         Kpi k = KpiService.compute(snap, 0, 0, JournalStats.from(List.of()));
         assertThat(k.heatPct()).isNull();
         assertThat(k.cashPct()).isNull();
@@ -44,7 +44,7 @@ class KpiServiceTest {
 
     @Test
     void 총위험_10퍼센트_초과는_critical() {
-        PlanSnapshot snap = new PlanSnapshot("KR", null, 1_000_000.0, List.of(item("지금 매수 가능", 10_000, 9_000, 13_000, 110)), null);
+        PlanSnapshot snap = new PlanSnapshot("KR", null, 1_000_000.0, java.util.Map.of(), List.of(item("지금 매수 가능", 10_000, 9_000, 13_000, 110)), null);
         assertThat(KpiService.compute(snap, 0, 0, JournalStats.from(List.of())).heatStatus()).isEqualTo("critical");
     }
 }

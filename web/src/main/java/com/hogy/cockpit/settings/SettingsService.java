@@ -19,11 +19,50 @@ public class SettingsService {
     private final OwnerSettingsRepository repo;
     private final PasswordEncoder encoder;
     private final AppProperties props;
+    private final SecretBox secrets;
 
-    public SettingsService(OwnerSettingsRepository repo, PasswordEncoder encoder, AppProperties props) {
+    public SettingsService(OwnerSettingsRepository repo, PasswordEncoder encoder, AppProperties props,
+                           SecretBox secrets) {
         this.repo = repo;
         this.encoder = encoder;
         this.props = props;
+        this.secrets = secrets;
+    }
+
+    /** KRX 계정. 비밀번호를 비워 두면 기존 값 유지, clear=true 면 삭제. */
+    @Transactional
+    public void updateKrx(String id, String pw, boolean clear) {
+        OwnerSettings s = get();
+        if (clear) {
+            s.setKrxId(null);
+            s.setKrxPwEnc(null);
+            return;
+        }
+        if (id == null || id.isBlank()) {
+            throw new IllegalArgumentException("KRX 아이디를 입력하세요");
+        }
+        s.setKrxId(id.trim());
+        if (pw != null && !pw.isEmpty()) {
+            s.setKrxPwEnc(secrets.encrypt(pw));
+        } else if (s.getKrxPwEnc() == null) {
+            throw new IllegalArgumentException("KRX 비밀번호를 입력하세요");
+        }
+    }
+
+    /** 배치 실행용 KRX 계정(평문). 미설정이면 null. */
+    public KrxAccount krxAccount() {
+        OwnerSettings s = get();
+        if (!s.hasKrxAccount()) {
+            return null;
+        }
+        return new KrxAccount(s.getKrxId(), secrets.decrypt(s.getKrxPwEnc()));
+    }
+
+    public record KrxAccount(String id, String password) {
+        @Override
+        public String toString() {           // 로그·예외 메시지에 비밀번호 노출 방지
+            return "KrxAccount[id=" + id + ", password=****]";
+        }
     }
 
     @Transactional

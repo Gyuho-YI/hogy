@@ -36,7 +36,9 @@ import com.hogy.cockpit.batch.BatchStatus;
         "app.data-dir=target/desktop-test/output",
         "app.password=",
         "app.batch-enabled=true",
-        "app.screener-command=echo",
+        // 스크리너 대신 셸: KRX 환경변수 전달 여부(비밀번호는 값 대신 설정 여부만)와 인자를 출력
+        // (Spring 이 ${...} 를 자체 해석하므로 셸 문법은 중괄호 없이 작성)
+        "app.screener-command=sh,-c,[ -n \"$KRX_PW\" ] && P=yes; echo KRX_ID=$KRX_ID PW_SET=$P $0 $*",
         "spring.datasource.url=jdbc:h2:mem:cockpit-desktop;DB_CLOSE_DELAY=-1"})
 @AutoConfigureMockMvc
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -47,6 +49,8 @@ class DesktopFlowTest {
     MockMvc mvc;
     @Autowired
     BatchService batch;
+    @Autowired
+    com.hogy.cockpit.settings.SettingsService settings;
 
     @Test
     @Order(1)
@@ -84,6 +88,17 @@ class DesktopFlowTest {
         mvc.perform(post("/settings/trading").with(user("owner")).with(csrf())
                 .param("accountKr", "30000000").param("accountUs", "20000").param("autoBatch", "true"))
            .andExpect(redirectedUrl("/settings"));
+        // KRX 계정 없으면 국내 실행 거절
+        mvc.perform(post("/settings/batch/kr").with(user("owner")).with(csrf()))
+           .andExpect(flash().attribute("error", containsString("KRX")));
+        mvc.perform(post("/settings/krx").with(user("owner")).with(csrf())
+                .param("krxId", "mykrx").param("krxPw", "s3cret-krx-pw"))
+           .andExpect(flash().attribute("ok", containsString("암호화")));
+        // DB 에는 암호문만 저장
+        assertThat(settings.get().getKrxPwEnc()).isNotBlank().doesNotContain("s3cret-krx-pw");
+        assertThat(settings.krxAccount().password()).isEqualTo("s3cret-krx-pw");
+        assertThat(settings.krxAccount().toString()).doesNotContain("s3cret");
+
         mvc.perform(post("/settings/batch/kr").with(user("owner")).with(csrf()))
            .andExpect(flash().attribute("ok", containsString("시작")));
 
@@ -93,7 +108,9 @@ class DesktopFlowTest {
             s = batch.status("kr");
         }
         assertThat(s.success()).isTrue();
-        assertThat(String.join("\n", s.tail())).contains("kr --account 30000000 --out").contains("desktop-test");
+        String log = String.join("\n", s.tail());
+        assertThat(log).contains("KRX_ID=mykrx PW_SET=yes kr --account 30000000 --out").contains("desktop-test")
+                       .doesNotContain("s3cret-krx-pw");
 
         mvc.perform(get("/settings").with(user("owner")))
            .andExpect(status().isOk())

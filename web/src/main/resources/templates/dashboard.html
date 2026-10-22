@@ -11,6 +11,21 @@
     <p class="muted" th:if="${snap.generatedAt}">기준 <span th:text="${snap.generatedAt}"></span>
       · 계좌 <span th:text="${#numbers.formatDecimal(snap.account, 1, 'COMMA', 0, 'POINT')}"></span></p>
   </div>
+  <p class="funnel small" th:unless="${snap.safeStats().isEmpty()}">
+    <span class="muted">스크리닝 단계:</span>
+    <th:block th:if="${market == 'us'}">
+      검사 <strong th:text="${snap.safeStats()['scanned']}">0</strong>
+      → 시세 수신 <strong th:text="${snap.safeStats()['received']}">0</strong>
+      → 추세·RS 통과 <strong th:text="${snap.safeStats()['trend']}">0</strong>
+      → 펀더멘털 통과 <strong th:text="${snap.safeStats()['fundamental']}">0</strong>
+      → 매수 셋업 <strong th:text="${snap.safeStats()['setup']}">0</strong>
+    </th:block>
+    <th:block th:unless="${market == 'us'}">
+      분석 <strong th:text="${snap.safeStats()['scanned']}">0</strong>
+      → 매집·점화 후보 <strong th:text="${snap.safeStats()['candidates']}">0</strong>
+      → 실행 가능 <strong th:text="${snap.safeStats()['setup']}">0</strong>
+    </th:block>
+  </p>
   <p th:if="${snap.loadError}" class="alert warning" role="status">⚠ <span th:text="${snap.loadError}"></span>
     → <a th:href="@{/settings}">설정에서 스크리닝 실행</a></p>
 
@@ -55,7 +70,8 @@
     <!-- ② 좌측: 매매 계획표 (실행 순) -->
     <section class="card plan-card" aria-label="매매 계획표">
       <h2>매매 계획표</h2>
-      <p th:if="${items.isEmpty()}" class="muted">표시할 후보가 없습니다. 배치 실행 결과를 확인하세요.</p>
+      <p th:if="${items.isEmpty() and snap.generatedAt != null}" class="muted">✓ 스크리닝은 정상 완료됐지만 조건을 통과한 종목이 없습니다(위 통계 참고). 무리하게 사지 않는 것도 전략입니다.</p>
+      <p th:if="${items.isEmpty() and snap.generatedAt == null}" class="muted">아직 결과가 없습니다. [설정]에서 스크리닝을 실행하세요.</p>
       <div class="table-wrap" th:unless="${items.isEmpty()}">
         <table class="plan-table">
           <thead>
@@ -73,14 +89,15 @@
                 <span th:case="'지금 매수 가능'" class="badge good">✓ 매수 가능</span>
                 <span th:case="'돌파 대기(Buy Stop)'" class="badge info">⏱ 돌파 대기</span>
                 <span th:case="'지정가 대기'" class="badge warning">◷ 지정가 대기</span>
+                <span th:case="'관망'" class="badge muted" th:text="${it.stage.startsWith('관찰')} ? '👁 관찰' : '– 관망'">– 관망</span>
                 <span th:case="*" class="badge muted">– 관망</span>
               </span>
             </td>
-            <td class="num" th:text="${#numbers.formatDecimal(it.buyLow, 1, 'COMMA', decimals, 'POINT')} + ' ~ ' + ${#numbers.formatDecimal(it.buyHigh, 1, 'COMMA', decimals, 'POINT')}">-</td>
-            <td class="num"><span th:text="${#numbers.formatDecimal(it.stop, 1, 'COMMA', decimals, 'POINT')}">-</span>
+            <td class="num" th:text="${it.buyLow != null and it.buyHigh != null} ? ${#numbers.formatDecimal(it.buyLow, 1, 'COMMA', decimals, 'POINT')} + ' ~ ' + ${#numbers.formatDecimal(it.buyHigh, 1, 'COMMA', decimals, 'POINT')} : '-'">-</td>
+            <td class="num"><span th:text="${it.stop != null} ? ${#numbers.formatDecimal(it.stop, 1, 'COMMA', decimals, 'POINT')} : '-'">-</span>
               <br><span class="muted small" th:if="${it.riskPct != null}" th:text="'-' + ${#numbers.formatDecimal(it.riskPct * 100, 1, 1)} + '%'"></span></td>
-            <td class="num hide-sm" th:text="${#numbers.formatDecimal(it.t1, 1, 'COMMA', decimals, 'POINT')} + ' / ' + ${#numbers.formatDecimal(it.t2, 1, 'COMMA', decimals, 'POINT')}">-</td>
-            <td class="num"><span th:text="${#numbers.formatInteger(it.sharesNow, 1, 'COMMA')}">0</span>
+            <td class="num hide-sm" th:text="${it.t1 != null and it.t2 != null} ? ${#numbers.formatDecimal(it.t1, 1, 'COMMA', decimals, 'POINT')} + ' / ' + ${#numbers.formatDecimal(it.t2, 1, 'COMMA', decimals, 'POINT')} : '-'">-</td>
+            <td class="num"><span th:text="${it.actionable()} ? ${#numbers.formatInteger(it.sharesNow, 1, 'COMMA')} : '-'">0</span>
               <br><span class="muted small" th:if="${it.sharesAdd > 0}" th:text="'+' + ${it.sharesAdd} + ' 점화 시'"></span></td>
             <td class="num hide-sm" th:text="${it.rewardRisk() != null} ? ${#numbers.formatDecimal(it.rewardRisk(), 1, 1)} : '-'">-</td>
             <td><a class="btn-sm" th:if="${it.actionable()}" th:href="@{/journal/{m}(m=${market},code=${it.code})}">일지 기록</a></td>

@@ -103,8 +103,9 @@ jobs:
       - name: 해외 스크리너·섹터 레이더 실데이터 점검 (네트워크 의존 → 실패해도 빌드 유지)
         continue-on-error: true
         run: |
-          ./build/app/Cockpit/screener/screener.exe us --account 20000 --universe NVDA,AAPL,MSFT,AVGO,PLTR --out build/smoke
-          Get-Content build/smoke/plans_us.json -TotalCount 20
+          # 기본 유니버스(약 130종목) 그대로 실행 → 사용자 PC 와 같은 조건의 단계별 통과 수 확인
+          ./build/app/Cockpit/screener/screener.exe us --account 20000 --out build/smoke
+          python -c "import json; d=json.load(open('build/smoke/plans_us.json', encoding='utf-8')); print('STATS', d['stats']); [print(i['code'], i['action'], i['notes'][-1] if i['notes'] else '') for i in d['items']]"
           Get-Content build/smoke/sectors_us.json -TotalCount 40
 
       - name: ZIP 압축

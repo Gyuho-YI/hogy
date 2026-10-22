@@ -78,6 +78,18 @@ public class SettingsController {
         return "redirect:/settings";
     }
 
+    @PostMapping("/settings/krx")
+    public String krx(@RequestParam(required = false) String krxId, @RequestParam(required = false) String krxPw,
+                      @RequestParam(defaultValue = "false") boolean clear, RedirectAttributes ra) {
+        try {
+            settings.updateKrx(krxId, krxPw, clear);
+            ra.addFlashAttribute("ok", clear ? "KRX 계정을 삭제했습니다" : "KRX 계정을 저장했습니다(비밀번호는 암호화 저장)");
+        } catch (IllegalArgumentException e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/settings";
+    }
+
     @PostMapping("/settings/password")
     public String password(@RequestParam String current, @RequestParam String password,
                            @RequestParam String confirm, RedirectAttributes ra) {

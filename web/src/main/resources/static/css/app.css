@@ -209,3 +209,5 @@ code { font-size: 0.85em; }
 .ellipsis { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nowrap { white-space: nowrap; }
 .logout button { white-space: nowrap; }
+.funnel { margin: 0 0 12px; color: var(--ink-2); }
+.funnel strong { color: var(--ink); }

@@ -37,6 +37,9 @@ def load(ticker: str, start: str, end: str):
     return px, flow, sb
 
 
+LAST_SCANNED = 0   # 직전 실행의 분석 대상 종목 수(웹 화면 통계용)
+
+
 def screen() -> pd.DataFrame:
     end = biz_date()
     start = (datetime.strptime(end, "%Y%m%d") - timedelta(days=150)).strftime("%Y%m%d")
@@ -44,6 +47,8 @@ def screen() -> pd.DataFrame:
     uni = build_universe(end)
     uni = uni[uni["시가총액"] >= MIN_MCAP_ACCUM].sort_values("시가총액", ascending=False).head(TOP_N_BY_MCAP)
     print(f"[1/2] 분석 대상: {len(uni)}종목 (시총 {MIN_MCAP_ACCUM/1e8:,.0f}억↑)")
+    global LAST_SCANNED
+    LAST_SCANNED = len(uni)
 
     out = []
     for i, (t, row) in enumerate(uni.iterrows(), 1):

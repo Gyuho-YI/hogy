@@ -29,6 +29,13 @@ public class OwnerSettings {
     @Column(nullable = false)
     private boolean autoBatch = true;
 
+    /** KRX 정보데이터시스템 회원 ID / 암호화된 비밀번호(국내 시세 조회에 필요, 2025년 말부터 로그인 필수). */
+    @Column(length = 60)
+    private String krxId;
+
+    @Column(length = 400)
+    private String krxPwEnc;
+
     protected OwnerSettings() {
     }
 
@@ -46,4 +53,12 @@ public class OwnerSettings {
     public void setAccountUs(Double accountUs) { this.accountUs = accountUs; }
     public boolean isAutoBatch() { return autoBatch; }
     public void setAutoBatch(boolean autoBatch) { this.autoBatch = autoBatch; }
+    public String getKrxId() { return krxId; }
+    public void setKrxId(String krxId) { this.krxId = krxId; }
+    public String getKrxPwEnc() { return krxPwEnc; }
+    public void setKrxPwEnc(String krxPwEnc) { this.krxPwEnc = krxPwEnc; }
+
+    public boolean hasKrxAccount() {
+        return krxId != null && !krxId.isBlank() && krxPwEnc != null;
+    }
 }

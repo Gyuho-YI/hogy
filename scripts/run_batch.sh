@@ -9,6 +9,7 @@ MARKET="${1:?사용법: run_batch.sh kr|us}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ACCOUNT_KR="${ACCOUNT_KR:-30000000}"     # 국내 계좌 평가금액(원)
 ACCOUNT_US="${ACCOUNT_US:-20000}"        # 해외 계좌 평가금액(USD)
+# 국내 시세는 KRX 회원 로그인 필요: export KRX_ID=... KRX_PW=... (deploy/cockpit.env 등에 보관)
 
 cd "$ROOT/screener"
 source "$ROOT/.venv/bin/activate"
