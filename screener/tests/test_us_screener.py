@@ -71,6 +71,15 @@ def test_관찰종목_감시가격(monkeypatch):
     assert any(n.startswith("감시:") for n in w["notes"])
 
 
+def test_감시선은_항상_현재가_이상(monkeypatch):
+    """과거 피벗을 크게 넘어선 종목도 '돌파 감시선'이 현재가 아래로 내려가지 않음."""
+    df = _trend(vcp=True, seed=4)
+    df = pd.concat([df, df.iloc[-1:].assign(Close=130.0, High=131.0, Low=128.0, Open=129.0)
+                    .set_index(df.index[-1:] + pd.offsets.BDay(1))])        # 피벗(≈99) 위로 급등
+    lv = u.watch_levels(df)
+    assert lv["watchBreakout"] >= float(df["Close"].iloc[-1])
+
+
 def test_유동성_미달은_제외(monkeypatch):
     thin = _trend(seed=9)
     thin["Volume"] = 1_000                                   # 거래대금 ≈ $10만 → 제외

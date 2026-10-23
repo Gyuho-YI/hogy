@@ -114,11 +114,14 @@ def is_liquid(df: pd.DataFrame) -> bool:
 def watch_levels(df: pd.DataFrame) -> dict:
     """
     관찰 종목 감시 가격(매수 구간이 아님 → 수량 계산 없음).
-    - 돌파 감시선: VCP 피벗이 있으면 피벗, 없으면 최근 30거래일 고점 → 거래량 동반 돌파 시 재검토
+    - 돌파 감시선: 현재가 위의 VCP 피벗, 없거나 이미 지났으면 최근 30거래일 고점 → 거래량 동반 돌파 시 재검토
     - 이탈선: 50일선 → 종가 이탈 시 추세 훼손(관찰 제외 후보)
     """
     v = detect_vcp(df)
-    breakout = float(v.pivot) if v.pivot else float(df["High"].iloc[-30:].max())
+    close = float(df["Close"].iloc[-1])
+    recent_high = float(df["High"].iloc[-30:].max())       # 항상 현재가 이상
+    # 이미 지나간(현재가보다 낮은) 피벗은 감시선으로 무의미 → 최근 고점 사용
+    breakout = float(v.pivot) if v.pivot and v.pivot >= close else recent_high
     exit_line = float(df["Close"].rolling(50).mean().iloc[-1])
     return {"watchBreakout": round(breakout, 2), "watchExit": round(exit_line, 2)}
 
