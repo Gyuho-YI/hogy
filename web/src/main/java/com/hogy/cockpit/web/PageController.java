@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import com.hogy.cockpit.config.AppProperties;
 import com.hogy.cockpit.dashboard.KpiService;
 import com.hogy.cockpit.journal.JournalService;
 import com.hogy.cockpit.journal.Strategy;
@@ -38,9 +39,11 @@ public class PageController {
     private final JournalService journal;
     private final SettingsService settings;
     private final SectorService sectors;
+    private final AppProperties props;
 
     public PageController(PlanRepository plans, KpiService kpis, JournalService journal, SettingsService settings,
-                          SectorService sectors) {
+                          SectorService sectors, AppProperties props) {
+        this.props = props;
         this.plans = plans;
         this.kpis = kpis;
         this.journal = journal;
@@ -68,6 +71,8 @@ public class PageController {
         model.addAttribute("items", snap.sortedItems());
         model.addAttribute("kpi", kpis.compute(snap, m));
         model.addAttribute("decimals", "us".equals(m) ? 2 : 0);
+        // 국내 + 앱이 배치를 직접 실행하는 모드인데 KRX 계정이 없으면 상단 안내
+        model.addAttribute("krxMissing", "kr".equals(m) && props.batchEnabled() && !settings.get().hasKrxAccount());
         // 주도 섹터·테마 소속 종목 배지(국내만: 해외는 ETF 기준이라 종목 매핑 없음)
         model.addAttribute("hot", sectors.load(m).safeHotCodes());
         return "dashboard";

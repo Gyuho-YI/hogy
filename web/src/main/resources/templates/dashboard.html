@@ -26,6 +26,8 @@
       → 실행 가능 <strong th:text="${snap.safeStats()['setup']}">0</strong>
     </th:block>
   </p>
+  <p th:if="${krxMissing}" class="alert critical" role="alert">
+    ⛔ 국내 스크리닝에는 KRX 계정이 필요합니다. <a th:href="@{/settings#krx}">→ 설정에서 KRX 계정 입력</a></p>
   <p th:if="${snap.loadError}" class="alert warning" role="status">⚠ <span th:text="${snap.loadError}"></span>
     → <a th:href="@{/settings}">설정에서 스크리닝 실행</a></p>
 

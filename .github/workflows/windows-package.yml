@@ -50,10 +50,20 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: pip }
 
+      - name: 버전 결정 (태그 v1.2.3 → 1.2.3, 그 외 dev-커밋)
+        env:
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          if ($env:TAG -match '^v(\d+(\.\d+){0,2})$') { $ver = $Matches[1]; $pkg = $Matches[1] }
+          else { $ver = "dev-" + "${{ github.sha }}".Substring(0, 7); $pkg = '0.1.0' }
+          "APP_VERSION=$ver" >> $env:GITHUB_ENV
+          "PKG_VERSION=$pkg" >> $env:GITHUB_ENV
+          Write-Output "앱 버전: $ver / 패키지 버전: $pkg"
+
       - name: 웹앱 JAR 빌드
         run: |
           cd web
-          ./mvnw.cmd -B -DskipTests package
+          ./mvnw.cmd -B -DskipTests "-Dcockpit.version=$env:APP_VERSION" package
 
       - name: screener.exe 빌드 (PyInstaller)
         run: |
@@ -67,22 +77,44 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "screener.exe 자가 진단 실패" }
 
       - name: Cockpit.exe 빌드 (jpackage, Java 런타임 포함)
-        env:
-          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          # 앱 버전: 태그(v1.2.3)에서 추출, 형식이 아니면 0.1.0
-          $ver = $env:TAG -replace '^v', ''
-          if ($ver -notmatch '^\d+(\.\d+){0,2}$') { $ver = '0.1.0' }
           New-Item -ItemType Directory -Force build/jin | Out-Null
           Copy-Item web/target/cockpit-0.1.0.jar build/jin/cockpit.jar
           jpackage --type app-image --name Cockpit `
             --input build/jin --main-jar cockpit.jar `
-            --dest build/app --app-version $ver --vendor hogy `
+            --dest build/app --app-version $env:PKG_VERSION --vendor hogy `
             --java-options "-Dcockpit.desktop=true" `
             --java-options "-Dfile.encoding=UTF-8" `
             --java-options "-Xmx512m"
           Copy-Item -Recurse build/pyi/screener build/app/Cockpit/screener
           Copy-Item "packaging/README-실행방법.txt" build/app/Cockpit/
+
+      - name: 업데이트 교체 테스트 (실제 v0.3.0 실행 중 → 새 버전 실행 시 자동 교체)
+        run: |
+          # 종료 기능이 없는 구버전을 띄워 두고, 새 버전이 포트 점유 프로세스를 교체하는지 확인
+          Invoke-WebRequest -Uri https://github.com/Gyuho-YI/hogy/releases/download/v0.3.0/Cockpit-windows.zip -OutFile old.zip
+          Expand-Archive old.zip -DestinationPath build/old
+          $old = Start-Process -FilePath build/old/Cockpit/Cockpit.exe -PassThru
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 2
+            try { if ((Invoke-WebRequest -Uri http://localhost:18080/login -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { break } } catch { }
+          }
+          Write-Output "구버전 기동 확인"
+          $env:COCKPIT_AUTO_REPLACE = '1'     # 무인 환경: 확인 창 생략
+          $p = Start-Process -FilePath build/app/Cockpit/Cockpit.exe -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $v = Invoke-RestMethod -Uri http://localhost:18080/api/instance -TimeoutSec 3
+              if ($v.version -eq $env:APP_VERSION) { $ok = $true; break }
+            } catch { }
+          }
+          Write-Output "교체 후 실행 중 버전: $($v.version) / 구버전 프로세스 종료: $($old.HasExited)"
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Process Cockpit* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          if (-not $ok) { throw "구버전 → 새 버전 교체 실패" }
 
       - name: 실행 스모크 테스트 (기동 → 최초설정 화면 응답 → 종료)
         run: |
@@ -92,7 +124,8 @@ jobs:
             Start-Sleep -Seconds 2
             try {
               $r = Invoke-WebRequest -Uri http://localhost:18080/setup -UseBasicParsing -TimeoutSec 3
-              if ($r.StatusCode -eq 200 -and $r.Content -match "Cockpit") { $ok = $true; break }
+              $v = Invoke-RestMethod -Uri http://localhost:18080/api/instance -TimeoutSec 3
+              if ($r.StatusCode -eq 200 -and $r.Content -match "Cockpit" -and $v.version -eq $env:APP_VERSION) { $ok = $true; break }
             } catch { }
           }
           Get-ChildItem "$env:USERPROFILE/Cockpit/logs" -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 40 }

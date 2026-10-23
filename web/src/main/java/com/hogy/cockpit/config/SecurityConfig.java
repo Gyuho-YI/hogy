@@ -49,7 +49,8 @@ public class SecurityConfig {
                                             UserDetailsService uds) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login", "/setup", "/css/**", "/js/**", "/favicon.ico").permitAll()
+                .requestMatchers("/login", "/setup", "/css/**", "/js/**", "/favicon.ico",
+                        "/api/instance", "/api/instance/shutdown").permitAll()
                 .anyRequest().authenticated())
             .formLogin(form -> form
                 .loginPage("/login")
@@ -59,7 +60,9 @@ public class SecurityConfig {
                 .key(settings.rememberKey())
                 .userDetailsService(uds)
                 .tokenValiditySeconds(30 * 24 * 3600))
-            .logout(lo -> lo.logoutSuccessUrl("/login?logout"));
+            .logout(lo -> lo.logoutSuccessUrl("/login?logout"))
+            // 런처 종료 요청은 브라우저 폼이 아니라 토큰 헤더로 인증 → CSRF 대상에서 제외
+            .csrf(c -> c.ignoringRequestMatchers("/api/instance/shutdown"));
         return http.build();
     }
 }

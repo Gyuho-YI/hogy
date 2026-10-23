@@ -35,6 +35,18 @@ class WebFlowTest {
     }
 
     @Test
+    void 버전_확인은_공개_종료는_토큰_필요() throws Exception {
+        mvc.perform(get("/api/instance"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.app").value("cockpit"))
+           .andExpect(jsonPath("$.version").isString());
+        // 서버 모드(데스크톱 아님) 또는 토큰 불일치 → 거부
+        mvc.perform(post("/api/instance/shutdown").header("X-Cockpit-Token", "guess"))
+           .andExpect(status().isForbidden());
+        mvc.perform(post("/api/instance/shutdown")).andExpect(status().isForbidden());
+    }
+
+    @Test
     void 지원하지_않는_시장은_404() throws Exception {
         mvc.perform(get("/dashboard/jp").with(user("owner"))).andExpect(status().isNotFound());
     }

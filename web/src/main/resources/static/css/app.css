@@ -211,3 +211,4 @@ code { font-size: 0.85em; }
 .logout button { white-space: nowrap; }
 .funnel { margin: 0 0 12px; color: var(--ink-2); }
 .funnel strong { color: var(--ink); }
+.brand .ver { font-size: 0.7rem; font-weight: 500; color: var(--muted); margin-left: 2px; }

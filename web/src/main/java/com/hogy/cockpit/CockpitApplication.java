@@ -1,14 +1,12 @@
 package com.hogy.cockpit;
 
-import java.net.HttpURLConnection;
-import java.net.URI;
 import java.util.Arrays;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
-import com.hogy.cockpit.config.DesktopBrowser;
+import com.hogy.cockpit.config.DesktopLauncher;
 
 /**
  * 개인용 트레이딩 콕핏.
@@ -29,26 +27,14 @@ public class CockpitApplication {
         boolean desktop = Boolean.getBoolean("cockpit.desktop") || Arrays.asList(args).contains("--desktop");
         SpringApplication app = new SpringApplication(CockpitApplication.class);
         if (desktop) {
-            String url = "http://localhost:" + DESKTOP_PORT + "/";
-            // 이미 실행 중이면 새로 띄우지 않고 브라우저만 열기(바탕화면 아이콘 중복 클릭 대비)
-            if (alreadyRunning(url + "login")) {
-                DesktopBrowser.open(url);
+            // 이미 실행 중: 같은 버전이면 브라우저만, 다른 버전이면 이전 버전 종료 후 교체
+            java.nio.file.Path dataDir = java.nio.file.Path.of(System.getProperty("user.home"), "Cockpit", "output");
+            if (DesktopLauncher.prepare(DESKTOP_PORT, dataDir) == DesktopLauncher.Decision.EXIT) {
                 return;
             }
-            app.setHeadless(false);              // 브라우저 열기(java.awt.Desktop)에 필요
+            app.setHeadless(false);              // 브라우저 열기·확인 창(java.awt)에 필요
             app.setAdditionalProfiles("desktop");
         }
         app.run(args);
-    }
-
-    private static boolean alreadyRunning(String url) {
-        try {
-            HttpURLConnection c = (HttpURLConnection) URI.create(url).toURL().openConnection();
-            c.setConnectTimeout(800);
-            c.setReadTimeout(800);
-            return c.getResponseCode() == 200;
-        } catch (Exception e) {
-            return false;
-        }
     }
 }

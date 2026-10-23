@@ -5,7 +5,10 @@
 <header th:replace="~{fragments :: nav('settings')}"></header>
 
 <main class="page">
-  <div class="page-head"><h1>설정</h1></div>
+  <div class="page-head"><h1>설정</h1><span class="muted small" th:text="'실행 중 버전: ' + ${appVersion}">버전</span></div>
+  <p th:if="${batchEnabled and !s.hasKrxAccount()}" class="alert critical" role="alert">
+    ⛔ 국내 스크리닝에는 <strong>KRX 계정</strong>이 필요합니다(한국거래소 로그인 필수화).
+    <a href="#krx">→ KRX 계정 입력하기</a></p>
   <p th:if="${ok}" class="alert good" role="status">✓ <span th:text="${ok}"></span></p>
   <p th:if="${error}" class="alert critical" role="alert">⛔ <span th:text="${error}"></span></p>
 

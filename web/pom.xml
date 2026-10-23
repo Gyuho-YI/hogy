@@ -19,6 +19,8 @@
 
     <properties>
         <java.version>17</java.version>
+        <!-- 배포 버전: CI 가 -Dcockpit.version=0.3.1 처럼 주입. 로컬 빌드는 dev -->
+        <cockpit.version>dev</cockpit.version>
     </properties>
 
     <dependencies>
@@ -71,6 +73,23 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- 버전 파일만 치환(@cockpit.version@), 나머지 리소스는 그대로 복사 -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>cockpit-version.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>cockpit-version.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
