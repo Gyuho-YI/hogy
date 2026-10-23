@@ -59,6 +59,28 @@ def test_관찰_사유와_통계(monkeypatch):
     assert stats["fundamental"] == 2                 # GROW, VCPX
 
 
+def test_관찰종목_감시가격(monkeypatch):
+    frames = {"GROW": _trend(seed=1)}
+    frames.update({f"D{i}": _down() for i in range(6)})
+    res, web, stats = run(monkeypatch, frames, {"GROW": (105.0, 50)})   # 매출 미달 → 관찰
+    w = web[0]
+    df = frames["GROW"]
+    assert w["watchBreakout"] == round(float(df["High"].iloc[-30:].max()), 2)      # VCP 없으면 30일 고점
+    assert w["watchExit"] == round(float(df["Close"].rolling(50).mean().iloc[-1]), 2)   # 50일선
+    assert w["buyLow"] is None and w["sharesNow"] == 0                              # 매수 구간 아님
+    assert any(n.startswith("감시:") for n in w["notes"])
+
+
+def test_유동성_미달은_제외(monkeypatch):
+    thin = _trend(seed=9)
+    thin["Volume"] = 1_000                                   # 거래대금 ≈ $10만 → 제외
+    frames = {"THIN": thin, "GROW": _trend(seed=1)}
+    frames.update({f"D{i}": _down() for i in range(6)})
+    res, web, stats = run(monkeypatch, frames, {"GROW": (130.0, 30)})
+    assert stats["received"] == 8 and stats["liquid"] == 7
+    assert "THIN" not in {w["code"] for w in web}
+
+
 def test_전부_하락이면_빈목록이지만_통계는_정상(monkeypatch):
     frames = {f"D{i}": _down() for i in range(5)}
     res, web, stats = run(monkeypatch, frames, {})

@@ -10,6 +10,7 @@ import com.hogy.cockpit.util.SafeMath;
 /**
  * 종목별 매매 계획 (Python screener/export.py plan_record() 와 1:1 대응).
  * 값이 계산 불가였던 필드는 null 로 들어옵니다.
+ * watchBreakout / watchExit: '관찰' 종목 감시 가격(돌파 감시선 / 50일선 이탈선). 매수 구간이 아니므로 수량 계산 없음.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record PlanItem(
@@ -17,7 +18,8 @@ public record PlanItem(
         Double close, Double buyLow, Double buyHigh, Double stop, Double riskPct,
         Double t1, Double t2, Double addTrigger, Double weightPct,
         int sharesNow, int sharesAdd, String edgeSource,
-        List<String> notes, List<PricePoint> history) {
+        List<String> notes, List<PricePoint> history,
+        Double watchBreakout, Double watchExit) {
 
     /** 화면 정렬 순서: 실행 가능한 것부터. */
     private static final Map<String, Integer> ORDER = Map.of(
@@ -47,6 +49,11 @@ public record PlanItem(
             return 0.0;
         }
         return sharesNow * (buyHigh - stop);
+    }
+
+    /** 관찰 종목이며 감시 가격이 있는가. */
+    public boolean watching() {
+        return !actionable() && watchBreakout != null;
     }
 
     /** 이번 주문 투입 금액. */

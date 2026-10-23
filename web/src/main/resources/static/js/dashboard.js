@@ -30,6 +30,9 @@
         { fill: '-1', backgroundColor: band + '26' }));
     }
     if (it.stop != null) datasets.push(level('손절', it.stop, C.css('--critical'), [6, 4], n));
+    // 관찰 종목: 매수 구간 대신 감시 가격(돌파 감시선·50일선 이탈선)
+    if (it.watchBreakout != null) datasets.push(level('돌파 감시선', it.watchBreakout, C.css('--series-2'), [6, 4], n));
+    if (it.watchExit != null) datasets.push(level('50일선(이탈선)', it.watchExit, C.css('--muted'), [2, 3], n));
     if (it.t1 != null) datasets.push(level('1차 익절', it.t1, C.css('--good'), [2, 3], n));
     if (it.t2 != null) datasets.push(level('2차 익절', it.t2, C.css('--good'), [8, 4], n));
 

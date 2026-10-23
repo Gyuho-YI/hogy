@@ -64,7 +64,11 @@ class WebFlowTest {
            // 매수 조건 미달 종목도 '관찰' + 사유로 노출, 단계 통계 표시
            .andExpect(content().string(containsString("👁 관찰")))
            .andExpect(content().string(containsString("스크리닝 단계")))
-           .andExpect(content().string(containsString("펀더멘털 통과")));
+           .andExpect(content().string(containsString("펀더멘털 통과")))
+           // 관찰 종목: 매수 구간 대신 감시 가격, 유동성 단계 통계
+           .andExpect(content().string(containsString("감시 ↑")))
+           .andExpect(content().string(containsString("이탈 ↓")))
+           .andExpect(content().string(containsString("유동성 통과")));
     }
 
     @Test

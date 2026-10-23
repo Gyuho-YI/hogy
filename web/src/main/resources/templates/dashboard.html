@@ -16,9 +16,11 @@
     <th:block th:if="${market == 'us'}">
       검사 <strong th:text="${snap.safeStats()['scanned']}">0</strong>
       → 시세 수신 <strong th:text="${snap.safeStats()['received']}">0</strong>
+      <th:block th:if="${snap.safeStats()['liquid'] != null}">→ 유동성 통과 <strong th:text="${snap.safeStats()['liquid']}">0</strong></th:block>
       → 추세·RS 통과 <strong th:text="${snap.safeStats()['trend']}">0</strong>
       → 펀더멘털 통과 <strong th:text="${snap.safeStats()['fundamental']}">0</strong>
       → 매수 셋업 <strong th:text="${snap.safeStats()['setup']}">0</strong>
+      <span class="muted" th:if="${snap.safeStats()['watch'] != null}" th:text="'(관찰 표시 ' + ${snap.safeStats()['watch']} + ')'"></span>
     </th:block>
     <th:block th:unless="${market == 'us'}">
       분석 <strong th:text="${snap.safeStats()['scanned']}">0</strong>
@@ -95,8 +97,17 @@
                 <span th:case="*" class="badge muted">– 관망</span>
               </span>
             </td>
-            <td class="num" th:text="${it.buyLow != null and it.buyHigh != null} ? ${#numbers.formatDecimal(it.buyLow, 1, 'COMMA', decimals, 'POINT')} + ' ~ ' + ${#numbers.formatDecimal(it.buyHigh, 1, 'COMMA', decimals, 'POINT')} : '-'">-</td>
-            <td class="num"><span th:text="${it.stop != null} ? ${#numbers.formatDecimal(it.stop, 1, 'COMMA', decimals, 'POINT')} : '-'">-</span>
+            <td class="num" th:unless="${it.watching()}" th:text="${it.buyLow != null and it.buyHigh != null} ? ${#numbers.formatDecimal(it.buyLow, 1, 'COMMA', decimals, 'POINT')} + ' ~ ' + ${#numbers.formatDecimal(it.buyHigh, 1, 'COMMA', decimals, 'POINT')} : '-'">-</td>
+            <!-- 관찰: 매수 구간 대신 감시 가격(점선 테두리로 매수 정보와 구분) -->
+            <td class="num" th:if="${it.watching()}">
+              <span class="watch-chip" th:title="'거래량 동반 돌파 시 매수 셋업 재검토'"
+                    th:text="'감시 ↑ ' + ${#numbers.formatDecimal(it.watchBreakout, 1, 'COMMA', decimals, 'POINT')}">감시</span>
+              <br><span class="muted small" th:if="${it.close != null}"
+                        th:text="'돌파까지 ' + ${#numbers.formatDecimal((it.watchBreakout / it.close - 1) * 100, 1, 1)} + '%'"></span></td>
+            <td class="num" th:if="${it.watching()}">
+              <span class="watch-chip exit" th:title="'50일선 종가 이탈 시 추세 훼손 → 관찰 제외'"
+                    th:text="${it.watchExit != null} ? '이탈 ↓ ' + ${#numbers.formatDecimal(it.watchExit, 1, 'COMMA', decimals, 'POINT')} : '-'">이탈</span></td>
+            <td class="num" th:unless="${it.watching()}"><span th:text="${it.stop != null} ? ${#numbers.formatDecimal(it.stop, 1, 'COMMA', decimals, 'POINT')} : '-'">-</span>
               <br><span class="muted small" th:if="${it.riskPct != null}" th:text="'-' + ${#numbers.formatDecimal(it.riskPct * 100, 1, 1)} + '%'"></span></td>
             <td class="num hide-sm" th:text="${it.t1 != null and it.t2 != null} ? ${#numbers.formatDecimal(it.t1, 1, 'COMMA', decimals, 'POINT')} + ' / ' + ${#numbers.formatDecimal(it.t2, 1, 'COMMA', decimals, 'POINT')} : '-'">-</td>
             <td class="num"><span th:text="${it.actionable()} ? ${#numbers.formatInteger(it.sharesNow, 1, 'COMMA')} : '-'">0</span>

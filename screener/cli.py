@@ -81,12 +81,17 @@ def ensure_krx_login() -> int:
 def self_check() -> int:
     """패키징(PyInstaller) 누락 모듈 검출용: 실제 실행 경로의 모든 모듈을 import."""
     import importlib
-    mods = ["pandas", "numpy", "requests", "pykrx", "yfinance", "common", "accumulation", "support",
+    mods = ["pandas", "numpy", "requests", "lxml", "pykrx", "yfinance", "common", "accumulation", "support",
             "trade_plan", "export", "kr_screener", "kr_accumulation", "plan_screener", "us_screener",
-            "sector_radar", "sector_data"]
+            "sector_radar", "sector_data", "us_universe"]
     for m in mods:
         mod = importlib.import_module(m)
         print(f"OK {m} {getattr(mod, '__version__', '')}".rstrip())
+    # 구성 종목 표 파싱 경로(pandas.read_html → lxml.html)가 패키징에 포함됐는지 실제 호출로 확인
+    import us_universe
+    html = "<table><tr><th>Symbol</th></tr>" + "".join(f"<tr><td>T{i}</td></tr>" for i in range(60)) + "</table>"
+    assert len(us_universe.parse_symbols(html)) == 60
+    print("OK read_html")
     return 0
 
 
@@ -135,7 +140,8 @@ def run(argv: list[str]) -> int:
 
 def _us_universe(arg: str | None, default: list[str]) -> list[str]:
     """
-    해외 검사 대상: --universe > 출력 폴더의 us_universe.txt(한 줄에 티커 1개, # 주석) > 기본 목록.
+    해외 검사 대상: --universe > 출력 폴더의 us_universe.txt(한 줄에 티커 1개, # 주석)
+                    > S&P 1500 + 나스닥100 자동 수집(실패 시 캐시 → 내장 기본 목록).
     """
     if arg:
         return [t.strip().upper() for t in arg.split(",") if t.strip()]
@@ -147,7 +153,10 @@ def _us_universe(arg: str | None, default: list[str]) -> list[str]:
         if tickers:
             print(f"  사용자 유니버스 사용: {f.name} ({len(tickers)}종목)")
             return tickers
-    return default
+    import us_universe
+    tickers, src = us_universe.load_universe(Path(os.environ.get("COCKPIT_OUTPUT_DIR") or OUT_DIR), default)
+    print(f"  검사 대상: {len(tickers)}종목 · 출처 {src}")
+    return tickers
 
 
 def _set_out(out_dir: str | None) -> None:

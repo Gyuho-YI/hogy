@@ -15,7 +15,7 @@ class KpiServiceTest {
 
     private static PlanItem item(String action, double buyHigh, double stop, double t2, int shares) {
         return new PlanItem("000001", "테스트", "점화", action, buyHigh, buyHigh * 0.98, buyHigh, stop,
-                (buyHigh - stop) / buyHigh, buyHigh * 1.2, t2, null, 25.0, shares, 0, "", List.of(), List.of());
+                (buyHigh - stop) / buyHigh, buyHigh * 1.2, t2, null, 25.0, shares, 0, "", List.of(), List.of(), null, null);
     }
 
     @Test

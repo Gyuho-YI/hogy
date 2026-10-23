@@ -70,7 +70,7 @@ jobs:
           pip install -r requirements.txt pyinstaller
           pyinstaller --noconfirm --onedir --name screener `
             --paths screener `
-            --collect-all pykrx --collect-all yfinance --collect-all curl_cffi `
+            --collect-all pykrx --collect-all yfinance --collect-all curl_cffi --collect-submodules lxml `
             --distpath build/pyi --workpath build/pyi-work --specpath build `
             screener/cli.py
           ./build/pyi/screener/screener.exe check

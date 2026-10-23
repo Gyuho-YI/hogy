@@ -212,3 +212,7 @@ code { font-size: 0.85em; }
 .funnel { margin: 0 0 12px; color: var(--ink-2); }
 .funnel strong { color: var(--ink); }
 .brand .ver { font-size: 0.7rem; font-weight: 500; color: var(--muted); margin-left: 2px; }
+/* 관찰 종목 감시 가격: 매수 정보(실선)와 구분되는 점선 칩 */
+.watch-chip { display: inline-block; white-space: nowrap; padding: 1px 6px; border-radius: 6px;
+  border: 1px dashed var(--series-2); font-size: 0.82rem; }
+.watch-chip.exit { border-color: var(--muted); color: var(--ink-2); }
