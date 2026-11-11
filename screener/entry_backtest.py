@@ -7,7 +7,9 @@
 - C. 분할진입: A 시점에 1/3 매수 → A 보유 중 점화 발생 시 2/3 추가 매수 (자본 1단위 기준 수익률)
 
 공통 청산 규칙
-- 손절  : 진입 직전 20일 최저가 -1% (단, 진입가 -8% 보다 깊으면 -8%로 제한). 갭하락 시 시가 체결
+- 손절  : 매매 계획과 같은 규칙(trade_plan.plan_stop) — 진입일까지의 데이터로 지지 구간을 만들고
+          가장 가까운 강한 지지 -1%, 진입가 -8% 보다 깊으면 -8%. 갭하락 시 시가 체결
+- 비용  : 왕복 거래비용(증권거래세·수수료·슬리피지) ROUND_TRIP_COST 를 매 거래 수익률에서 차감
 - 익절  : 진입 후 최고 종가가 +10% 이상 도달한 뒤, 종가가 20일선 이탈 시 청산(트레일링)
 - 시간손절: A 는 30영업일 내 +3% 미만이면 청산(기회비용 관리), 공통 최대 보유 60영업일
 
@@ -18,12 +20,22 @@
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from accumulation import analyze_accumulation
+from support import support_zones
+from trade_plan import plan_stop
+
+# 왕복 거래비용(진입+청산 합계, 수익률 차감분)
+# - 증권거래세 0.20%(2026년, KOSPI 거래세+농특세 / KOSDAQ 동일), 매도 시 1회
+# - 위탁수수료 약 0.015% × 2(온라인 기준)
+# - 슬리피지 약 0.06% × 2(호가 공백·체결 지연, 시가총액 2,000억↑ 기준 보수 가정)
+# 증권사·종목 유동성에 따라 다르므로 환경변수 BACKTEST_COST 로 덮어쓸 수 있습니다(예: 0.004).
+ROUND_TRIP_COST = float(os.environ.get("BACKTEST_COST", 0.0035))
 
 MAX_STOP = 0.08
 TRAIL_TRIGGER = 0.10
@@ -54,11 +66,30 @@ def stage_series(px: pd.DataFrame, flow: pd.DataFrame, shares_out: float,
     return stages
 
 
-def run_exit(px: pd.DataFrame, i: int, no_progress: bool) -> tuple[int, float, str]:
+def entry_stop(px: pd.DataFrame, i: int, kind: str) -> float:
+    """
+    i 일 종가 진입 시 손절가 — 매매 계획(build_plan)과 같은 구간·규칙으로 산출(미래 데이터 미사용).
+    kind='pre'(선진입): 매수 구간 [max(종가-3%, 박스하단+1%), 종가]
+    kind='ign'(점화)  : 피벗(직전 20일 고가) ~ 종가, 점화봉·AVWAP 를 지지선에 포함
+    """
+    hist = px.iloc[: i + 1]
+    c = float(hist["Close"].iloc[-1])
+    pivot = float(hist["High"].iloc[-21:-1].max())
+    if kind == "ign":
+        zones = support_zones(hist, pivot=pivot, ignition_idx=i, accum_start_idx=max(0, i - 40))
+        lo = min(pivot, c)
+    else:
+        zones = support_zones(hist, pivot=pivot, accum_start_idx=max(0, i - 40))
+        lo = max(c * 0.97, float(hist["Low"].iloc[-20:].min()) * 1.01)
+        lo = min(lo, c)
+    stop, _ = plan_stop(zones, lo, c)
+    return max(stop, c * (1 - MAX_STOP))
+
+
+def run_exit(px: pd.DataFrame, i: int, no_progress: bool, kind: str = "pre") -> tuple[int, float, str]:
     """i 일 종가 진입 후 청산 시뮬레이션 → (청산 인덱스, 청산가, 사유)."""
     entry = px["Close"].iloc[i]
-    base_low = px["Low"].iloc[max(0, i - 19): i + 1].min() * 0.99
-    stop = max(base_low, entry * (1 - MAX_STOP))
+    stop = entry_stop(px, i, kind)
     ma20 = px["Close"].rolling(20).mean()
     peak = entry
     last = min(i + MAX_HOLD, len(px) - 1)
@@ -83,7 +114,7 @@ def simulate(px: pd.DataFrame, stages: pd.Series) -> list[Trade]:
 
     def mk(name, i, j, xp, why, weight=1.0):
         e = px["Close"].iloc[i]
-        return Trade(name, idx[i], e, idx[j], xp, j - i, weight * (xp / e - 1), why)
+        return Trade(name, idx[i], e, idx[j], xp, j - i, weight * (xp / e - 1 - ROUND_TRIP_COST), why)
 
     # A: 선진입 (보유 중 신호는 무시 → 중복 진입 방지)
     busy = -1
@@ -91,7 +122,7 @@ def simulate(px: pd.DataFrame, stages: pd.Series) -> list[Trade]:
     for i in a_sig:
         if i <= busy or i >= len(px) - 1:
             continue
-        j, xp, why = run_exit(px, i, no_progress=True)
+        j, xp, why = run_exit(px, i, no_progress=True, kind="pre")
         a_trades.append((i, j, xp, why))
         trades.append(mk("A.선진입", i, j, xp, why))
         busy = j
@@ -102,20 +133,20 @@ def simulate(px: pd.DataFrame, stages: pd.Series) -> list[Trade]:
     for i in b_sig:
         if i <= busy or i >= len(px) - 1:
             continue
-        j, xp, why = run_exit(px, i, no_progress=False)
+        j, xp, why = run_exit(px, i, no_progress=False, kind="ign")
         b_exits[i] = (j, xp, why)
         trades.append(mk("B.점화진입", i, j, xp, why))
         busy = j
 
     # C: 분할진입 = A 1/3 + (A 보유 중 점화 시) B 2/3. 미집행 2/3 는 현금(수익 0)
     for i, j, xp, why in a_trades:
-        r = (xp / px["Close"].iloc[i] - 1) / 3
+        r = (xp / px["Close"].iloc[i] - 1 - ROUND_TRIP_COST) / 3
         hits = [k for k in b_sig if i < k <= j]
         exit_j = j
         if hits:
             k = hits[0]
-            kj, kxp, _ = b_exits.get(k) or run_exit(px, k, no_progress=False)
-            r += (kxp / px["Close"].iloc[k] - 1) * 2 / 3
+            kj, kxp, _ = b_exits.get(k) or run_exit(px, k, no_progress=False, kind="ign")
+            r += (kxp / px["Close"].iloc[k] - 1 - ROUND_TRIP_COST) * 2 / 3
             exit_j = max(j, kj)
             why = why + "+점화추가"
         trades.append(Trade("C.분할진입", idx[i], px["Close"].iloc[i], idx[exit_j], np.nan, exit_j - i, r, why))

@@ -28,6 +28,7 @@ FALLBACK_RISK = 0.01        # 표본 부족 시 고정 위험 1%
 MIN_SAMPLES = 30
 MAX_STOP = 0.08             # 손절폭 상한 8%
 CHASE_LIMIT = 0.05          # 피벗 +5% 초과 시 추격 금지
+MIN_RR_TO_RESISTANCE = 2.0  # 매수 상단 → 52주 고점(매물 저항) 거리가 2R 미만이면 진입 보류
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +123,27 @@ class TradePlan:
     shares_add: int             # 점화 확인 시 추가 수량(점화 대기 단계)
     add_trigger: float | None   # 추가 매수 트리거 가격
     notes: list[str] = field(default_factory=list)
+    rr_resistance: float | None = None   # 매수 상단 → 위쪽 매물 저항(52주 고점)까지의 손익비. 저항 없음(신고가) = None
+    blocks: list[str] = field(default_factory=list)   # 진입을 막은 규칙 코드(rr_resistance / earnings / gate / sim)
+
+
+def plan_stop(zones: list[Zone], lo: float, hi: float) -> tuple[float, str]:
+    """
+    손절가 산출(매매 계획·백테스트 공통 규칙).
+    - 매수 하단 아래 가장 가까운 '강한 지지(2개 이상 겹침)' 구간 하단 -1%, 없으면 가장 가까운 지지 -1%
+    - 매수 상단 대비 -8% 보다 깊으면 -8% 고정, 손절가는 항상 매수 하단 아래
+    반환: (손절가, 근거 메모)
+    """
+    below = [z for z in zones if z.low < lo * 0.999]
+    strong = [z for z in below if z.strength >= 2]
+    base = (strong or below or [Zone(lo * 0.95, ["기본 -5%"], 1, lo * 0.95)])[0]
+    stop = base.low * 0.99
+    if (hi - stop) / hi > MAX_STOP:
+        stop = hi * (1 - MAX_STOP)
+        note = f"지지선이 멀어 매수 상단 대비 -{MAX_STOP:.0%} 고정 손절"
+    else:
+        note = f"손절 근거: {'+'.join(base.sources)}"
+    return min(stop, lo * 0.99), note
 
 
 def climax_signal(px: pd.DataFrame, entry_idx: int | None = None) -> list[str]:
@@ -177,7 +199,8 @@ def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
     elif stage in ("매집 후기(점화 대기)", "매집 진행"):
         # 박스 상단 근처 추격을 피하고 하단 쪽에서 분할 매수: [현재가 -3% ~ 현재가], 박스하단 위로 제한
         box_low = float(px["Low"].iloc[-20:].min())
-        lo, hi = max(c * 0.97, box_low * 1.01), c
+        # 현재가가 박스 하단 +1% 안쪽이면 하단이 상단(현재가)을 넘지 않도록 현재가로 제한
+        lo, hi = min(max(c * 0.97, box_low * 1.01), c), c
         tranche = 1 / 3  # 분할 진입: 1/3 선진입, 2/3 는 점화 시
         add_trigger = pivot if pivot else float(px["High"].iloc[-21:-1].max())
         action = "지금 매수 가능" if stage == "매집 후기(점화 대기)" else "관망"
@@ -186,17 +209,9 @@ def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
     else:
         return _empty_plan(stage, edge, ["매집/점화 단계 아님"])
 
-    # ---- (2) 손절: 매수 하단 아래 가장 가까운 '강한 지지' -1%, 없으면 가장 가까운 지지 -1% ----
-    below = [z for z in zones if z.low < lo * 0.999]
-    strong = [z for z in below if z.strength >= 2]
-    base = (strong or below or [Zone(lo * 0.95, ["기본 -5%"], 1, lo * 0.95)])[0]
-    stop = base.low * 0.99
-    if (hi - stop) / hi > MAX_STOP:
-        stop = hi * (1 - MAX_STOP)
-        notes.append(f"지지선이 멀어 매수 상단 대비 -{MAX_STOP:.0%} 고정 손절")
-    else:
-        notes.append(f"손절 근거: {'+'.join(base.sources)}")
-    stop = min(stop, lo * 0.99)  # 손절가는 반드시 매수 하단 아래
+    # ---- (2) 손절: 백테스트와 같은 규칙(plan_stop) ----
+    stop, stop_note = plan_stop(zones, lo, hi)
+    notes.append(stop_note)
     risk_ps = hi - stop  # 1주당 위험(최악 체결가 기준)
     risk_pct = risk_ps / hi
 
@@ -204,9 +219,16 @@ def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
     t1 = hi + 2 * risk_ps
     t2 = hi + 3 * risk_ps
     hi52 = float(px["High"].iloc[-252:].max())
-    if t1 < hi52 * 0.99 < t2:
-        t2 = hi52 * 0.99
+    blocks: list[str] = []
+    resistance = hi52 * 0.99
+    rr_res = (resistance - hi) / risk_ps if resistance > hi and risk_ps > 0 else None
+    if t1 < resistance < t2:
+        t2 = resistance
         notes.append(f"52주 고점 {hi52:,.0f} 매물 저항 → 2차 목표 하향")
+    elif rr_res is not None and rr_res < MIN_RR_TO_RESISTANCE:
+        # 1차 목표(2R)보다 아래에 매물 저항이 있으면 목표 자체가 비현실적 → 진입 보류
+        blocks.append("rr_resistance")
+        notes.append(f"52주 고점 {hi52:,.0f} 저항까지 {rr_res:.1f}R < {MIN_RR_TO_RESISTANCE:.0f}R → 진입 보류")
     trail = "잔여 1/3: 20일선을 대량거래 동반 종가 이탈 시 전량 / 클라이맥스 신호 시 절반 선익절"
     climax = climax_signal(px)
     if len(climax) >= 2:  # 단일 신호는 정상 돌파일에도 흔하므로 2개 이상일 때만 경고
@@ -216,6 +238,8 @@ def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
     if edge.risk <= 0:
         action = "관망"
         notes.append("기대값 ≤ 0: 매수 금지")
+    if blocks:
+        action = "관망"
     raw_weight = edge.risk / risk_pct if risk_pct > 0 else 0.0
     weight = min(raw_weight, MAX_WEIGHT)
     if raw_weight > MAX_WEIGHT:
@@ -231,7 +255,22 @@ def build_plan(px: pd.DataFrame, stage: str, edge: Edge, account: float,
         to_tick(t1, market=market), to_tick(t2, market=market), trail,
         round(risk_pct, 4), edge, round(weight, 4), shares_now, shares_add,
         to_tick(add_trigger, "up", market) if add_trigger else None, notes,
+        round(float(rr_res), 2) if rr_res is not None else None, blocks,
     )
+
+
+def block_entry(plan: TradePlan, code: str, note: str) -> TradePlan:
+    """
+    사후 규칙(실적 발표 회피·리스크 게이트·시뮬레이션 필터)으로 신규 진입을 막습니다.
+    매수 구간·손절·목표가는 그대로 두고(감시용) 이번 수량만 0 으로 만듭니다.
+    """
+    if code not in plan.blocks:
+        plan.blocks.append(code)
+    plan.notes.append(note)
+    plan.action = "관망"
+    plan.shares_now = 0
+    plan.shares_add = 0
+    return plan
 
 
 def _empty_plan(stage: str, edge: Edge, notes: list[str]) -> TradePlan:

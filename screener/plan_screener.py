@@ -5,7 +5,9 @@
 1) kr_accumulation.screen() 으로 매집/점화 후보 추출
 2) 종목별 최근 10영업일 내 점화일 탐색 → 피벗(점화 직전 20일 고가)·앵커드 VWAP 기준점 확정
 3) entry_backtest 결과 CSV(있으면)로 단계별 승률·손익비 → 하프 켈리 위험 비율 산출
-4) trade_plan.build_plan() 으로 매매 계획 생성, 포트폴리오 총 위험(Heat) 점검
+4) trade_plan.build_plan() 으로 매매 계획 생성(매물 저항 2R 미만 → 진입 보류)
+5) 일봉 시뮬레이션(simulate.py)으로 기대값이 명백히 음수인 계획 제외
+6) 리스크 게이트(risk_gate.py): 매집 점수 순으로 총 위험 6%·동시 6종목·동일 업종 2종목 한도
 
 실행 예
   python plan_screener.py --account 30000000
@@ -23,8 +25,11 @@ from accumulation import analyze_accumulation
 from kr_accumulation import load
 from kr_accumulation import screen as accumulation_screen
 from kr_screener import biz_date
+from events import kr_earnings_season, today_kst
 from export import export_plans, plan_record
-from trade_plan import edge_from_returns, build_plan, portfolio_heat
+from risk_gate import Candidate, apply_gate
+from simulate import sim_verdict, simulate_plan
+from trade_plan import block_entry, build_plan, edge_from_returns
 
 IGNITION_LOOKBACK = 10  # 최근 10영업일 내 점화면 '점화' 단계로 계획 수립
 
@@ -39,6 +44,19 @@ def load_edges(stats_csv: str | None) -> dict:
         "pre": edge_from_returns(tr.loc[tr["strategy"] == "A.선진입", "ret"], "A.선진입"),
         "ign": edge_from_returns(tr.loc[tr["strategy"] == "B.점화진입", "ret"], "B.점화진입"),
     }
+
+
+def load_sector_map(date: str) -> dict[str, str]:
+    """종목코드 → KRX 업종명(리스크 게이트의 업종 집중 한도용). 조회 실패 시 빈 맵(한도 미적용)."""
+    from pykrx import stock
+    out: dict[str, str] = {}
+    for mkt in ("KOSPI", "KOSDAQ"):
+        try:
+            sc = stock.get_market_sector_classifications(date, mkt)
+            out.update({str(k): str(v) for k, v in sc["업종명"].items()})
+        except Exception as e:
+            print(f"  ! 업종 분류 조회 실패({mkt}): {e}")
+    return out
 
 
 def find_ignition(px, flow, shares_out, sb) -> int | None:
@@ -65,8 +83,10 @@ def main(account: float, stats_csv: str | None) -> tuple[pd.DataFrame, list[dict
     from pykrx import stock  # 상장주식수 조회
 
     shares_out = stock.get_market_cap(end, market="ALL")["상장주식수"]
+    sector_of = load_sector_map(end)
+    season = kr_earnings_season(today_kst())
 
-    rows, plans, web = [], [], []
+    rows, plans, web, pending = [], [], [], []
     for _, c in cands.iterrows():
         t = c["code"]
         try:
@@ -81,8 +101,22 @@ def main(account: float, stats_csv: str | None) -> tuple[pd.DataFrame, list[dict
             edge = edges["ign"] if stage == "점화" else edges["pre"]
             p = build_plan(px, stage, edge, account, pivot=pivot,
                            ignition_idx=ign, accum_start_idx=accum_start)
+            if season and p.action != "관망":
+                p.notes.append("실적 시즌: 잠정실적 공시 일정 확인 후 진입(DART)")
+            sim = None
+            if p.buy_high == p.buy_high and p.stop == p.stop and p.t1 == p.t1:
+                s_res = simulate_plan(px, p.buy_high, p.stop, p.t1)
+                blk, note = sim_verdict(s_res)
+                if blk:
+                    block_entry(p, "sim", note)
+                elif s_res.ok:
+                    p.notes.append(note)
+                sim = s_res.to_record() if s_res.ok else None
             plans.append(p)
-            web.append(plan_record(t, c["name"], stage, p, px))
+            pending.append({"code": t, "name": c["name"], "stage": stage, "plan": p, "px": px,
+                            "score": float(c["점수"]), "sector": sector_of.get(t),
+                            "extra": {"score": float(c["점수"]), "sector": sector_of.get(t), "sim": sim,
+                                      "earningsSeason": season}})
             rows.append({
                 "code": t, "name": c["name"], "단계": stage, "판단": p.action,
                 "현재가": float(px["Close"].iloc[-1]),
@@ -92,7 +126,7 @@ def main(account: float, stats_csv: str | None) -> tuple[pd.DataFrame, list[dict
                 "추가매수트리거": p.add_trigger,
                 "비중%": round(p.weight * 100, 1),
                 "지금수량": p.shares_now, "점화시추가": p.shares_add,
-                "투입금액": round(p.shares_now * p.buy_high),
+                "투입금액": round(p.shares_now * p.buy_high) if p.buy_high == p.buy_high else 0,
                 "메모": " / ".join(p.notes),
             })
         except Exception as e:
@@ -100,11 +134,22 @@ def main(account: float, stats_csv: str | None) -> tuple[pd.DataFrame, list[dict
         finally:
             time.sleep(0.3)
 
-    for w in portfolio_heat(plans):
-        print("⚠", w)
+    gate = apply_gate([Candidate(x["code"], x["plan"], x["score"], x["sector"]) for x in pending])
+    print(f"리스크 게이트: 총 위험 {gate['heatUsed']:.1%} / 한도 {gate['heatLimit']:.0%} · 보류 {gate['gated']}종목")
+    for x in pending:
+        web.append(plan_record(x["code"], x["name"], x["stage"], x["plan"], x["px"], extra=x["extra"]))
+    by_code = {x["code"]: x for x in pending}
+    rows = [r for r in rows if r["code"] in by_code]
+    for r in rows:                    # 게이트 반영 후 판단·수량 갱신
+        x = by_code[r["code"]]
+        r["판단"], r["지금수량"] = x["plan"].action, x["plan"].shares_now
+        r["투입금액"] = round(x["plan"].shares_now * x["plan"].buy_high) if x["plan"].buy_high == x["plan"].buy_high else 0
+        r["메모"] = " / ".join(x["plan"].notes)
     order = {"지금 매수 가능": 0, "지정가 대기": 1, "관망": 2}
     stats["setup"] = sum(1 for p in plans if p.action != "관망")
-    return pd.DataFrame(rows).sort_values("판단", key=lambda s: s.map(order)), web, stats
+    stats.update({"gated": gate["gated"], "heatUsed": gate["heatUsed"]})
+    res = pd.DataFrame(rows)
+    return (res.sort_values("판단", key=lambda s: s.map(order)) if not res.empty else res), web, stats
 
 
 if __name__ == "__main__":

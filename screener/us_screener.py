@@ -15,15 +15,20 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 
 import pandas as pd
 import yfinance as yf
 
-from common import detect_vcp, rs_rank, safe_yoy, trend_template
+from common import Growth, detect_vcp, rs_rank, safe_yoy, trend_template
+from events import business_days_until, earnings_block, next_earnings_date, today_kst
 from export import export_plans, plan_record
-from trade_plan import build_plan, edge_from_returns, portfolio_heat
+from risk_gate import Candidate, apply_gate
+from simulate import sim_verdict, simulate_plan
+from trade_plan import block_entry, build_plan, edge_from_returns
 
 MIN_REV_YOY = 0.20      # 매출 YoY 20% 이상
+MIN_EPS_YOY = 0.25      # 희석 EPS YoY 25% 이상(미너비니 SEPA 기준). 계산불가면 탈락시키지 않고 메모만
 MAX_DEBT_EQUITY = 100   # 부채비율(D/E) 100% 이하 (금융업은 구조상 높으므로 별도 유니버스 권장)
 MIN_RS = 70             # RS Rating 70 이상
 MIN_PRICE = 10.0        # 유동성 필터: 주가 $10 이상(초저가주 제외)
@@ -54,6 +59,89 @@ def quarterly_revenue_yoy(tk: yf.Ticker):
         pass
     g = tk.info.get("revenueGrowth")
     return safe_yoy(1 + g, 1) if g is not None else safe_yoy(None, None)
+
+
+@dataclass
+class Fundamentals:
+    """분기 손익계산서 기반 펀더멘털(모두 전년 동기 대비)."""
+    rev: Growth
+    eps: Growth
+    eps_prev: Growth                 # 직전 분기의 EPS YoY(가속 판단용)
+    op_margin: float | None          # 최근 분기 영업이익률
+    op_margin_prev: float | None     # 전년 동기 영업이익률
+
+    @property
+    def eps_accelerating(self) -> bool | None:
+        if self.eps.rate is None or self.eps_prev.rate is None:
+            return None
+        return bool(self.eps.rate > self.eps_prev.rate)
+
+    @property
+    def margin_delta(self) -> float | None:
+        if self.op_margin is None or self.op_margin_prev is None:
+            return None
+        return self.op_margin - self.op_margin_prev
+
+    def failures(self) -> list[str]:
+        """EPS 기준 탈락 사유. 데이터가 없으면(계산불가) 탈락시키지 않습니다."""
+        f = []
+        if self.eps.label in ("적자전환", "적자확대", "적자지속"):
+            f.append(f"EPS {self.eps.label}")
+        elif self.eps.label == "정상" and self.eps.rate is not None and self.eps.rate < MIN_EPS_YOY:
+            f.append(f"EPS YoY {self.eps.rate * 100:.0f}% < {MIN_EPS_YOY * 100:.0f}%")
+        return f
+
+    def to_record(self) -> dict:
+        pct = lambda x: None if x is None else round(x * 100, 1)  # noqa: E731
+        return {
+            "revYoy": pct(self.rev.rate), "revLabel": self.rev.label,
+            "epsYoy": pct(self.eps.rate), "epsLabel": self.eps.label,
+            "epsYoyPrev": pct(self.eps_prev.rate), "epsAccel": self.eps_accelerating,
+            "opMargin": pct(self.op_margin), "opMarginPrev": pct(self.op_margin_prev),
+            "marginDelta": pct(self.margin_delta),
+        }
+
+
+def _row(q: pd.DataFrame, names: tuple[str, ...]) -> pd.Series | None:
+    for n in names:
+        if n in q.index:
+            return pd.to_numeric(q.loc[n], errors="coerce")
+    return None
+
+
+def _at(s: pd.Series | None, i: int):
+    return None if s is None or len(s) <= i else s.iloc[i]
+
+
+def quarterly_fundamentals(tk: yf.Ticker) -> Fundamentals:
+    """
+    분기 손익계산서(최신 → 과거 열 순서)로 매출·EPS YoY, EPS 가속, 영업이익률 변화를 계산.
+    열이 부족한 항목은 '계산불가'로 남깁니다(0 으로 채우지 않음).
+    """
+    rev_g = quarterly_revenue_yoy(tk)
+    try:
+        q = tk.quarterly_income_stmt
+    except Exception:
+        q = None
+    if q is None or getattr(q, "empty", True):
+        none = safe_yoy(None, None)
+        return Fundamentals(rev_g, none, none, None, None)
+    eps = _row(q, ("Diluted EPS", "Basic EPS"))
+    rev = _row(q, ("Total Revenue", "Operating Revenue"))
+    op = _row(q, ("Operating Income", "Total Operating Income As Reported"))
+
+    def margin(i):
+        r, o = _at(rev, i), _at(op, i)
+        if r is None or o is None or pd.isna(r) or pd.isna(o) or r == 0:
+            return None
+        return float(o / r)
+
+    return Fundamentals(
+        rev=rev_g,
+        eps=safe_yoy(_at(eps, 0), _at(eps, 4)),
+        eps_prev=safe_yoy(_at(eps, 1), _at(eps, 5)),
+        op_margin=margin(0), op_margin_prev=margin(4),
+    )
 
 
 def _split(px: pd.DataFrame, tickers: list[str]) -> dict[str, pd.DataFrame]:
@@ -126,7 +214,40 @@ def watch_levels(df: pd.DataFrame) -> dict:
     return {"watchBreakout": round(breakout, 2), "watchExit": round(exit_line, 2)}
 
 
+def _simulate(df: pd.DataFrame, p) -> dict | None:
+    """매수 상단 체결 → 손절 vs 1차 목표(2R) 시뮬레이션. 기대값이 명백히 음수면 진입 보류."""
+    if not (p.buy_high == p.buy_high and p.stop == p.stop and p.t1 == p.t1):
+        return None
+    s = simulate_plan(df, p.buy_high, p.stop, p.t1)
+    block, note = sim_verdict(s)
+    if block:
+        block_entry(p, "sim", note)
+    elif s.ok:
+        p.notes.append(note)
+    return s.to_record() if s.ok else None
+
+
 WATCH_STAGE = "관찰(추세 통과)"
+
+
+def classify_stage(v, close: float) -> tuple[str, str]:
+    """
+    VCP 결과 → 매매 단계.
+    - '점화'     : 수축 형태 충족 + 최근 5영업일 내 '거래량 200% 동반' 피벗 돌파 + 현재가가 피벗 위
+    - '돌파 대기': VCP 형성 완료(형태 + 거래량 고갈), 아직 피벗 아래 → Buy Stop
+    - '추세만 충족': 그 외(피벗 위라도 거래량 없는 돌파, 형태 미충족은 매수 셋업이 아님)
+    반환: (단계, 탈락 시 사유)
+    """
+    if v.pivot and close > v.pivot:
+        if v.shape_ok and v.breakout_days_ago is not None:
+            return "점화", ""
+        if not v.shape_ok:
+            return "추세만 충족", "피벗 위지만 VCP 수축 형태 미충족"
+        return "추세만 충족", "피벗 위지만 거래량 동반 돌파 없음(50일 평균 200% 미만)"
+    if v.is_vcp:
+        return "돌파 대기", ""
+    shrink = " → ".join(f"{c * 100:.0f}%" for c in v.contractions)
+    return "추세만 충족", f"VCP 미형성({v.note or '거래량 미감소'})" + (f": 조정폭 {shrink}" if shrink else "")
 
 
 def _watch(df: pd.DataFrame, ticker: str, edge, account: float, reasons: list[str]) -> dict:
@@ -179,6 +300,7 @@ def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, l
 
     # --- [2] 펀더멘털 필터 + VCP ---
     out = []
+    setups: list[dict] = []
     watch_count = 0
 
     def add_watch(rec: dict) -> None:
@@ -195,8 +317,10 @@ def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, l
             continue
         tk = yf.Ticker(t)
         try:
-            g = quarterly_revenue_yoy(tk)
-            de = tk.info.get("debtToEquity")
+            fu = quarterly_fundamentals(tk)
+            g = fu.rev
+            info = tk.info or {}
+            de = info.get("debtToEquity")
         except Exception as e:  # 통신 오류는 '관찰'로 남기고 계속
             print(f"  ! {t} 재무 조회 실패: {e}")
             add_watch(_watch(df, t, edge, account, [rs_note, "재무 데이터 조회 실패 → 펀더멘털 미확인"]))
@@ -211,52 +335,66 @@ def screen(tickers: list[str], account: float = 10_000) -> tuple[pd.DataFrame, l
             fails.append(f"매출 YoY {g.rate * 100:.0f}% < {MIN_REV_YOY * 100:.0f}%")
         if de is not None and de > MAX_DEBT_EQUITY:
             fails.append(f"부채비율 {de:.0f}% > {MAX_DEBT_EQUITY}%")
+        fails += fu.failures()
         if fails:
             add_watch(_watch(df, t, edge, account, [rs_note, "펀더멘털 미달: " + ", ".join(fails)]))
             continue
         stats["fundamental"] += 1
 
         v = detect_vcp(df)
-        # 매매 계획: 돌파 당일/돌파 후 → '점화', VCP 형성 중 → '돌파 대기'(Buy Stop), 그 외 → 관찰
-        close = float(df["Close"].iloc[-1])
-        if v.pivot and close > v.pivot:
-            stage = "점화"
-        elif v.is_vcp:
-            stage = "돌파 대기"
-        else:
-            stage = "추세만 충족"
+        stage, stage_note = classify_stage(v, float(df["Close"].iloc[-1]))
         p = build_plan(df, stage, edge, account, pivot=v.pivot, market="US")
         plans.append(p)
         if stage == "추세만 충족":
-            shrink = " → ".join(f"{c * 100:.0f}%" for c in v.contractions)
-            vcp_note = f"VCP 미형성({v.note or '거래량 미감소'})" + (f": 조정폭 {shrink}" if shrink else "")
-            add_watch(_watch(df, t, edge, account, [rs_note, f"매출 YoY {g.rate * 100:.0f}% 충족", vcp_note]))
-        else:
-            stats["setup"] += 1
-            web.append(plan_record(t, t, stage, p, df))
-        out.append({
-            "ticker": t,
-            "RS": round(r["rs"], 1),
-            "rev_yoy%": round(g.rate * 100, 1),
-            "yoy_label": g.label,
-            "D/E": de,
-            "52w고점대비%": round(r["tt"]["pct_from_high"] * 100, 1),
-            "VCP": v.is_vcp,
-            "수축폭": v.contractions,
-            "pivot": round(v.pivot, 2) if v.pivot else None,
-            "오늘돌파": v.breakout_today,
-            "추격금지": v.extended,
-            "단계": stage, "판단": p.action,
-            "매수구간": f"{p.buy_low:,.2f} ~ {p.buy_high:,.2f}" if p.buy_low == p.buy_low else "-",
-            "손절가": p.stop, "손절폭%": round(p.risk_pct * 100, 1) if p.risk_pct == p.risk_pct else None, "1차익절(1/3)": p.t1, "2차익절(1/3)": p.t2,
-            "비중%": round(p.weight * 100, 1), "수량": p.shares_now,
-            "메모": " / ".join(p.notes),
-        })
+            add_watch(_watch(df, t, edge, account, [rs_note, f"매출 YoY {g.rate * 100:.0f}% 충족", stage_note]))
+            continue
+
+        # ---- 사후 규칙: 실적 발표 회피 → 시뮬레이션 필터 (게이트는 전 종목을 모은 뒤) ----
+        try:
+            ed = next_earnings_date(tk)
+        except Exception:
+            ed = None
+        days = business_days_until(ed, today_kst()) if ed else None
+        if earnings_block(days):
+            block_entry(p, "earnings", f"실적 발표 {ed:%m/%d}(D-{days}) → 발표 후 재평가")
+        sim = _simulate(df, p)
+        setups.append({"code": t, "stage": stage, "plan": p, "df": df, "score": float(r["rs"]),
+                       "sector": info.get("sector"),
+                       "extra": {"score": round(float(r["rs"]), 1), "sector": info.get("sector"),
+                                 "earningsDate": ed.isoformat() if ed else None, "earningsDays": days,
+                                 "fundamentals": fu.to_record(), "sim": sim,
+                                 "vcp": {"contractions": v.contractions, "pivot": v.pivot,
+                                         "breakoutDaysAgo": v.breakout_days_ago}},
+                       "row": {
+                           "ticker": t, "RS": round(r["rs"], 1),
+                           "rev_yoy%": round(g.rate * 100, 1), "yoy_label": g.label,
+                           "eps_yoy%": fu.to_record()["epsYoy"], "eps_label": fu.eps.label,
+                           "op_margin%": fu.to_record()["opMargin"], "D/E": de,
+                           "52w고점대비%": round(r["tt"]["pct_from_high"] * 100, 1),
+                           "VCP": v.is_vcp, "수축폭": v.contractions,
+                           "pivot": round(v.pivot, 2) if v.pivot else None,
+                           "오늘돌파": v.breakout_today, "추격금지": v.extended, "단계": stage,
+                           "실적발표": ed.isoformat() if ed else None}})
+
+    # ---- 리스크 게이트: RS 높은 순으로 누적(총 위험·보유 수·섹터 집중) ----
+    gate = apply_gate([Candidate(x["code"], x["plan"], x["score"], x["sector"]) for x in setups])
+    stats.update({"setup": len(setups), "gated": gate["gated"], "heatUsed": gate["heatUsed"]})
+    for x in setups:
+        p = x["plan"]
+        web.append(plan_record(x["code"], x["code"], x["stage"], p, x["df"], extra=x["extra"]))
+        sim = x["extra"]["sim"] or {}
+        out.append({**x["row"],
+                    "판단": p.action,
+                    "매수구간": f"{p.buy_low:,.2f} ~ {p.buy_high:,.2f}" if p.buy_low == p.buy_low else "-",
+                    "손절가": p.stop, "손절폭%": round(p.risk_pct * 100, 1) if p.risk_pct == p.risk_pct else None,
+                    "1차익절(1/3)": p.t1, "2차익절(1/3)": p.t2,
+                    "저항R": p.rr_resistance, "시뮬목표%": sim.get("pTarget"), "시뮬평균R": sim.get("expR"),
+                    "비중%": round(p.weight * 100, 1), "수량": p.shares_now,
+                    "메모": " / ".join(p.notes)})
 
     stats["watch"] = watch_count
     print(f"[3/3] 펀더멘털 통과: {stats['fundamental']}종목 · 매수 셋업(VCP/돌파): {stats['setup']}종목 · 관찰 표시 {watch_count}")
-    for w in portfolio_heat(plans):
-        print("⚠", w)
+    print(f"  리스크 게이트: 총 위험 {gate['heatUsed']:.1%} / 한도 {gate['heatLimit']:.0%} · 보류 {gate['gated']}종목")
     res = pd.DataFrame(out)
     return (res.sort_values(["VCP", "RS"], ascending=False) if not res.empty else res), web, stats
 

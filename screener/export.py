@@ -48,10 +48,14 @@ def _num(x):
     return v if np.isfinite(v) else None
 
 
-def plan_record(code: str, name: str, stage: str, plan, px: pd.DataFrame, history_days: int = 120) -> dict:
-    """TradePlan + 최근 종가 이력 → 웹앱용 레코드."""
-    hist = px["Close"].iloc[-history_days:]
-    return {
+def plan_record(code: str, name: str, stage: str, plan, px: pd.DataFrame, history_days: int = 120,
+                extra: dict | None = None) -> dict:
+    """
+    TradePlan + 최근 일봉 이력 → 웹앱용 레코드.
+    extra: 시장별 부가 정보(sim / earningsDate / fundamentals / sector / score 등)를 그대로 덧붙입니다.
+    """
+    hist = px.iloc[-history_days:]
+    rec = {
         "code": str(code), "name": str(name), "stage": stage, "action": plan.action,
         "close": _num(px["Close"].iloc[-1]),
         "buyLow": _num(plan.buy_low), "buyHigh": _num(plan.buy_high),
@@ -59,8 +63,31 @@ def plan_record(code: str, name: str, stage: str, plan, px: pd.DataFrame, histor
         "t1": _num(plan.t1), "t2": _num(plan.t2), "addTrigger": _num(plan.add_trigger),
         "weightPct": _num(plan.weight * 100), "sharesNow": int(plan.shares_now), "sharesAdd": int(plan.shares_add),
         "edgeSource": plan.edge.source, "notes": list(plan.notes),
-        "history": [{"d": d.strftime("%Y-%m-%d"), "c": _num(c)} for d, c in hist.items()],
+        "rrResistance": _num(getattr(plan, "rr_resistance", None)),
+        "blocks": list(getattr(plan, "blocks", [])),
+        # 일봉(시가·고가·저가·종가·거래량): 웹앱 캔들 차트용. 'c' 는 기존 화면 호환용 종가
+        "history": [{"d": d.strftime("%Y-%m-%d"), "o": _num(r["Open"]) if "Open" in r else None,
+                     "h": _num(r["High"]), "l": _num(r["Low"]), "c": _num(r["Close"]),
+                     "v": _num(r["Volume"])} for d, r in hist.iterrows()],
     }
+    if extra:
+        rec.update({k: _clean(v) for k, v in extra.items()})
+    return rec
+
+
+def _clean(v):
+    """중첩 dict/list 안의 NaN·inf → None (JSON 표준 준수)."""
+    if isinstance(v, dict):
+        return {k: _clean(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_clean(x) for x in v]
+    if isinstance(v, (bool, str)) or v is None:
+        return v
+    if isinstance(v, (int, np.integer)):
+        return int(v)
+    if isinstance(v, (float, np.floating)):
+        return _num(v)
+    return v
 
 
 def export_plans(market: str, records: list[dict], account: float, stats: dict | None = None) -> Path:

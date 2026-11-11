@@ -99,6 +99,8 @@ class VCPResult:
     breakout_today: bool = False                              # 당일 거래량 동반 돌파 여부
     extended: bool = False                                    # 피벗 대비 5% 이상 이격(추격 금지)
     note: str = ""
+    shape_ok: bool = False                                    # 수축 형태(T1 > T2 > ..., 깊이 조건) 충족 여부
+    breakout_days_ago: int | None = None                      # 최근 거래량 동반 돌파가 며칠 전인지(0 = 당일, 없으면 None)
 
 
 def detect_vcp(
@@ -110,6 +112,7 @@ def detect_vcp(
     breakout_vol_mult: float = 2.0,   # 돌파일 거래량 >= 50일 평균의 200%
     dry_up_ratio: float = 0.7,        # 최근 10일 평균 거래량 <= 50일 평균의 70%
     chase_limit: float = 0.05,        # 피벗 +5% 초과 시 추격 금지
+    breakout_lookback: int = 5,       # 돌파 인정 기간: 최근 N영업일 내 거래량 동반 돌파
 ) -> VCPResult:
     """
     단순화된 VCP 탐지 로직.
@@ -148,13 +151,32 @@ def detect_vcp(
         and contractions[-1] <= max_last_depth
     )
 
-    vol = df["Volume"]
-    vol50 = vol.iloc[-51:-1].mean()  # 당일 제외 50일 평균
-    dry_up = vol50 > 0 and vol.iloc[-11:-1].mean() <= vol50 * dry_up_ratio
-
+    vol = df["Volume"].to_numpy(dtype=float)
+    close = df["Close"].to_numpy(dtype=float)
     pivot = float(highs[peak_idx[-1]])
-    c, prev_c = df["Close"].iloc[-1], df["Close"].iloc[-2]
-    breakout = c > pivot and prev_c <= pivot and vol50 > 0 and vol.iloc[-1] >= vol50 * breakout_vol_mult
+
+    def _vol50(i: int) -> float:
+        """i 번째 봉 '직전' 50일 평균 거래량(i 당일 제외)."""
+        seg = vol[max(0, i - 50): i]
+        return float(seg.mean()) if len(seg) else 0.0
+
+    # 최근 N영업일 안에 '종가 기준 피벗 상향 돌파 + 거래량 50일 평균 200% 이상'이 있었는가
+    # (돌파 다음 날부터는 당일 거래량 조건이 깨지므로, 돌파 '봉'을 찾아 그날 기준으로 판정)
+    n = len(df)
+    breakout_days_ago = None
+    for k in range(0, min(breakout_lookback, n - 52)):
+        i = n - 1 - k
+        v50 = _vol50(i)
+        if close[i] > pivot and close[i - 1] <= pivot and v50 > 0 and vol[i] >= v50 * breakout_vol_mult:
+            breakout_days_ago = k
+            break
+
+    # 공급 고갈은 '돌파 직전' 10일 기준(돌파 후에는 거래량이 늘어나는 게 정상)
+    ref = n - 1 - breakout_days_ago if breakout_days_ago is not None else n - 1
+    v50_ref = _vol50(ref)
+    dry_up = v50_ref > 0 and float(vol[max(0, ref - 10): ref].mean()) <= v50_ref * dry_up_ratio
+
+    c = close[-1]
     extended = c > pivot * (1 + chase_limit)
 
     return VCPResult(
@@ -162,9 +184,11 @@ def detect_vcp(
         contractions=[round(float(x), 4) for x in contractions],
         pivot=pivot,
         volume_dry_up=bool(dry_up),
-        breakout_today=bool(breakout),
+        breakout_today=breakout_days_ago == 0,
         extended=bool(extended),
         note="" if shape_ok else "수축 패턴 불충족",
+        shape_ok=bool(shape_ok),
+        breakout_days_ago=breakout_days_ago,
     )
 
 

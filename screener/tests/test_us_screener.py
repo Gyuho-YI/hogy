@@ -94,3 +94,21 @@ def test_전부_하락이면_빈목록이지만_통계는_정상(monkeypatch):
     frames = {f"D{i}": _down() for i in range(5)}
     res, web, stats = run(monkeypatch, frames, {})
     assert web == [] and stats["trend"] == 0 and stats["received"] == 5
+
+
+def test_셋업_레코드에_시뮬_펀더멘털_게이트(monkeypatch, tmp_path):
+    import json
+    import export
+    frames = {"VCPX": _trend(vcp=True, seed=4)}
+    frames.update({f"D{i}": _down() for i in range(6)})
+    res, web, stats = run(monkeypatch, frames, {"VCPX": (140.0, 30)})
+    rec = next(r for r in web if r["code"] == "VCPX")
+    assert rec["stage"] == "돌파 대기"
+    assert rec["sim"] and 0 <= rec["sim"]["pTarget"] <= 1 and len(rec["sim"]["fan"]["p50"]) == 60
+    assert rec["fundamentals"]["revYoy"] == 40.0 and rec["fundamentals"]["epsLabel"] == "계산불가"
+    assert "heatUsed" in stats and stats["setup"] == 1
+    assert {"o", "h", "l", "c", "v"} <= set(rec["history"][-1])
+    monkeypatch.setattr(export, "OUT_DIR", tmp_path)
+    path = export.export_plans("us", web, 20_000, stats)
+    json.loads(path.read_text(encoding="utf-8"))          # NaN 없이 표준 JSON
+    assert "NaN" not in path.read_text(encoding="utf-8")
