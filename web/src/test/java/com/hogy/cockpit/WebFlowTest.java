@@ -62,7 +62,7 @@ class WebFlowTest {
            .andExpect(status().isOk())
            .andExpect(content().string(containsString("돌파 대기")))
            // 매수 조건 미달 종목도 '관찰' + 사유로 노출, 단계 통계 표시
-           .andExpect(content().string(containsString("👁 관찰")))
+           .andExpect(content().string(containsString("st watch")))
            .andExpect(content().string(containsString("스크리닝 단계")))
            .andExpect(content().string(containsString("펀더멘털 통과")))
            // 관찰 종목: 매수 구간 대신 감시 가격, 유동성 단계 통계
@@ -87,7 +87,7 @@ class WebFlowTest {
            .andExpect(jsonPath("$.hotCodes['267260']").value(org.hamcrest.Matchers.startsWith("주도")));
         // 계획표: 주도 섹터(전기전자 상위 3) 소속 SK하이닉스에 배지
         mvc.perform(get("/dashboard/kr").with(user("owner")))
-           .andExpect(content().string(containsString("badge hot")));
+           .andExpect(content().string(containsString("tag hot")));
     }
 
     @Test

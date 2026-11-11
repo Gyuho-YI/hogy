@@ -19,7 +19,56 @@ public record PlanItem(
         Double t1, Double t2, Double addTrigger, Double weightPct,
         int sharesNow, int sharesAdd, String edgeSource,
         List<String> notes, List<PricePoint> history,
-        Double watchBreakout, Double watchExit) {
+        Double watchBreakout, Double watchExit,
+        Double rrResistance, List<String> blocks, Double score, String sector,
+        String earningsDate, Integer earningsDays, Boolean earningsSeason,
+        Map<String, Object> fundamentals, SimSummary sim) {
+
+    /** 진입 보류 사유 코드 → 화면 라벨. */
+    private static final Map<String, String> BLOCK_LABELS = Map.of(
+            "rr_resistance", "매물 저항", "earnings", "실적 발표", "gate", "리스크 한도", "sim", "기대값 음수");
+
+    /** 이전 버전 JSON(부가 필드 없음) 호환 생성자. */
+    public PlanItem(String code, String name, String stage, String action,
+                    Double close, Double buyLow, Double buyHigh, Double stop, Double riskPct,
+                    Double t1, Double t2, Double addTrigger, Double weightPct,
+                    int sharesNow, int sharesAdd, String edgeSource,
+                    List<String> notes, List<PricePoint> history,
+                    Double watchBreakout, Double watchExit) {
+        this(code, name, stage, action, close, buyLow, buyHigh, stop, riskPct, t1, t2, addTrigger, weightPct,
+                sharesNow, sharesAdd, edgeSource, notes, history, watchBreakout, watchExit,
+                null, null, null, null, null, null, null, null, null);
+    }
+
+    /** 진입을 막은 규칙 라벨(없으면 빈 목록). */
+    public List<String> blockLabels() {
+        return blocks == null ? List.of() : blocks.stream().map(b -> BLOCK_LABELS.getOrDefault(b, b)).toList();
+    }
+
+    /** 화면 표시용 판단 라벨(짧은 형태). */
+    public String actionLabel() {
+        if (action == null) {
+            return "관망";
+        }
+        return switch (action) {
+            case "지금 매수 가능" -> "매수 가능";
+            case "돌파 대기(Buy Stop)" -> "돌파 대기";
+            case "지정가 대기" -> "지정가 대기";
+            default -> stage != null && stage.startsWith("관찰") ? "관찰" : (blocks != null && !blocks.isEmpty() ? "보류" : "관망");
+        };
+    }
+
+    /** 판단 상태 CSS 키: buy / stop-order / limit / hold / watch. */
+    public String actionKey() {
+        return switch (actionLabel()) {
+            case "매수 가능" -> "buy";
+            case "돌파 대기" -> "stop-order";
+            case "지정가 대기" -> "limit";
+            case "관찰" -> "watch";
+            case "보류" -> "held";
+            default -> "hold";
+        };
+    }
 
     /** 화면 정렬 순서: 실행 가능한 것부터. */
     private static final Map<String, Integer> ORDER = Map.of(

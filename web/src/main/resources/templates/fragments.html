@@ -2,24 +2,38 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head th:fragment="head(title)">
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#1a1a19">
-  <title th:text="${title}">Cockpit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FAFAFA">
+  <title th:text="${title} + ' — Cockpit'">Cockpit</title>
+  <link rel="preload" th:href="@{/fonts/PretendardVariable.woff2}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" th:href="@{/css/app.css}">
 </head>
 <body>
-<header th:fragment="nav(active)" class="topbar">
-  <a class="brand" th:href="@{/dashboard/kr}">Cockpit <span class="ver" th:text="${appVersion == 'dev'} ? 'dev' : 'v' + ${appVersion}">v</span></a>
-  <nav class="tabs" aria-label="메뉴">
-    <a th:href="@{/dashboard/kr}" th:classappend="${active == 'dash-kr'} ? 'on'">국내</a>
-    <a th:href="@{/dashboard/us}" th:classappend="${active == 'dash-us'} ? 'on'">해외</a>
-    <a th:href="@{/sectors/{m}(m=${market ?: 'kr'})}" th:classappend="${active == 'sectors'} ? 'on'">섹터</a>
-    <a th:href="@{/journal/{m}(m=${market ?: 'kr'})}" th:classappend="${active == 'journal'} ? 'on'">일지</a>
-    <a th:href="@{/settings}" th:classappend="${active == 'settings'} ? 'on'">설정</a>
-  </nav>
-  <form th:action="@{/logout}" method="post" class="logout">
-    <button type="submit" class="ghost">로그아웃</button>
-  </form>
+<!-- 상단 크롬: 서비스명 · 메뉴 · 로그아웃. 시장(국내/해외) 전환은 각 화면 제목 옆 세그먼트에서 -->
+<header th:fragment="nav(active)" class="chrome">
+  <div class="chrome-in">
+    <a class="brand" th:href="@{/dashboard/kr}" aria-label="Cockpit 홈">
+      <span class="brand-name">Cockpit</span>
+      <span class="brand-ver" th:text="${appVersion == 'dev'} ? 'dev' : 'v' + ${appVersion}">v</span>
+    </a>
+    <nav class="nav" aria-label="메뉴">
+      <a th:href="@{/dashboard/{m}(m=${market ?: 'kr'})}" th:classappend="${active == 'dash'} ? 'on'">매매 계획</a>
+      <a th:href="@{/sectors/{m}(m=${market ?: 'kr'})}" th:classappend="${active == 'sectors'} ? 'on'">섹터</a>
+      <a th:href="@{/journal/{m}(m=${market ?: 'kr'})}" th:classappend="${active == 'journal'} ? 'on'">매매일지</a>
+      <a th:href="@{/settings}" th:classappend="${active == 'settings'} ? 'on'">설정</a>
+    </nav>
+    <div class="chrome-r">
+      <form th:action="@{/logout}" method="post">
+        <button type="submit" class="btn ghost sm">로그아웃</button>
+      </form>
+    </div>
+  </div>
 </header>
+
+<!-- 시장 전환 세그먼트. path = 'dashboard' | 'sectors' | 'journal' -->
+<div th:fragment="market(path)" class="seg" role="tablist" aria-label="시장">
+  <a th:href="@{/{p}/kr(p=${path})}" th:classappend="${market == 'kr'} ? 'on'" role="tab" th:attr="aria-selected=${market == 'kr'}">국내</a>
+  <a th:href="@{/{p}/us(p=${path})}" th:classappend="${market == 'us'} ? 'on'" role="tab" th:attr="aria-selected=${market == 'us'}">해외</a>
+</div>
 </body>
 </html>

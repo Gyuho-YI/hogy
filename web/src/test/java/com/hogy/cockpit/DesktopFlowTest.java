@@ -114,7 +114,7 @@ class DesktopFlowTest {
 
         mvc.perform(get("/settings").with(user("owner")))
            .andExpect(status().isOk())
-           .andExpect(content().string(containsString("✓ 완료")));
+           .andExpect(content().string(containsString("완료")));
     }
 
     @Test

@@ -24,14 +24,14 @@ public record BatchStatus(String market, boolean running, LocalDateTime startedA
         return tail == null ? "" : String.join("\n", tail);
     }
 
-    /** 화면 표시: 아이콘 + 라벨(색만으로 상태를 전달하지 않음). */
+    /** 화면 표시 라벨: 상태를 글자로 명시(색만으로 전달하지 않음). */
     public String label() {
         if (running) {
-            return "⏳ 실행 중…";
+            return "실행 중";
         }
         if (finishedAt == null) {
-            return "– " + message;
+            return message;
         }
-        return (success() ? "✓ " : "⛔ ") + message;
+        return success() ? message : "실패 · " + message;
     }
 }

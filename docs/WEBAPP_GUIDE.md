@@ -27,7 +27,8 @@
 | 분석 | Python 3.11, pandas, pykrx, yfinance | 스크리닝·매매 계획·하프켈리 |
 | 연동 | JSON 파일 (`output/`) | 두 언어를 느슨하게 연결. DB 불필요 |
 | 서비스 | Java 17, Spring Boot 3.5, Thymeleaf, Spring Security | 화면·로그인·일지 |
-| 시각화 | Chart.js 4 (앱에 내장, CDN 의존 없음) | 가격+매수구간 차트, 산점도, 월별 손익 |
+| 시각화 | ztd-charts 0.7 (React 포함 단일 번들 `static/js/vendor/ztd-charts.min.js`, CDN 의존 없음) | 캔들+매수구간/손절/목표선, 시뮬레이션 분포, 산점도, 월별 손익 |
+| 디자인 | Pretendard Variable(앱 내장) · 스위스 타이포그래피/플랫 | 6단 활자 위계, 무채색 + 강조색 1개, 가격 방향만 한국식 적/청 |
 | 저장 | H2 파일 DB (`data/journal.mv.db`) | 매매일지. 백업은 파일 복사 |
 | 접속 | Tailscale | 외부 공개 없이 모바일 접속 |
 
@@ -42,7 +43,7 @@
 
 ```
 hogy/
-├── screener/        Python 스크리너 (common, accumulation, support, trade_plan, export ...)
+├── screener/        Python 스크리너 (common, accumulation, support, trade_plan, simulate, risk_gate, events, export ...)
 ├── web/             Spring Boot 웹앱
 │   └── src/main/java/com/hogy/cockpit/
 │       ├── config/      AppProperties, SecurityConfig (1인 로그인)
@@ -248,3 +249,16 @@ cd web && mvn test        # 16건: SafeMath, 하프켈리 통계, KPI 계산, �
 2. **보유 종목 손절 경보**: 배치에서 일지 보유 종목의 종가 ≤ 손절가면 알림
 3. **증권사 Open API 시세 연동**(한국투자증권 KIS 등): 장중 현재가 반영. 주문 자동화는 실수 비용이 크므로 마지막 단계에서 검토
 4. **해외 백테스트**: `entry_backtest.py` 를 yfinance 데이터로 확장해 해외도 켈리 사이징
+
+
+## 차트 번들 다시 만들기 (ztd-charts · Pretendard 버전 갱신 시)
+
+결과물(`web/src/main/resources/static/js/vendor/ztd-charts.min.js`, `static/fonts/PretendardVariable.woff2`)은 저장소에 커밋되어 있어
+Maven 빌드·Windows 패키징에는 Node 가 필요 없습니다. 라이브러리 버전을 올릴 때만 실행합니다.
+
+```bash
+cd web/frontend && npm ci && npm run build
+```
+
+- 진입점 `web/frontend/charts.jsx`: 화면 토큰(색·글꼴)과 같은 값으로 차트 테마를 고정하고 `window.ZTD.mount(el, type, props)` 를 노출합니다.
+- 사용 차트: candlestick(종목 가격) · line(시뮬레이션 분포, 월별 손익) · bar(결과 분포, 기대 R, 섹터 쏠림) · scatter(손절폭 × 목표 도달 확률)

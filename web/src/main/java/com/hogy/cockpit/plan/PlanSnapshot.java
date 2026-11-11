@@ -14,14 +14,14 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record PlanSnapshot(String market, String generatedAt, Double account,
-                           Map<String, Integer> stats, List<PlanItem> items, String loadError) {
+                           Map<String, Number> stats, List<PlanItem> items, String loadError) {
 
     public static PlanSnapshot empty(String market, String reason) {
         return new PlanSnapshot(market.toUpperCase(), null, null, Map.of(), List.of(), reason);
     }
 
     /** 단계별 통과 수(없으면 빈 맵). 결과 0건이어도 '정상 완료'인지 보여주는 근거. */
-    public Map<String, Integer> safeStats() {
+    public Map<String, Number> safeStats() {
         return stats == null ? Map.of() : stats;
     }
 

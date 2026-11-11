@@ -126,7 +126,8 @@ def simulate_plan(px: pd.DataFrame, entry: float, stop: float, target: float,
     rr = (xp - entry) / risk
 
     fan = {f"p{q}": [round(float(v / entry), 4) for v in np.percentile(closes, q, axis=0)] for q in FAN_Q}
-    edges = np.arange(-2.0, max(3.0, target_r + 0.5) + 0.25, 0.5)
+    # 0.5R 폭 구간, 중심이 -2R · -1.5R · … · 정수 R 에 오도록(손절 -1R · 목표 +2R 이 한 칸에 모임)
+    edges = np.arange(-2.25, max(3.0, target_r + 0.5) + 0.5, 0.5)
     counts, _ = np.histogram(np.clip(rr, edges[0], edges[-1] - 1e-9), bins=edges)
     r_hist = [{"r": round(float(edges[i] + 0.25), 2), "share": round(float(c / n), 4)} for i, c in enumerate(counts)]
 

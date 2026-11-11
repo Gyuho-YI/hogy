@@ -14,7 +14,7 @@ import com.hogy.cockpit.plan.PlanSnapshot;
 import com.hogy.cockpit.sector.SectorService;
 import com.hogy.cockpit.sector.SectorSnapshot;
 
-/** Chart.js 가 호출하는 JSON API (로그인 세션 필요). */
+/** 화면 스크립트(ztd-charts 차트)가 호출하는 JSON API (로그인 세션 필요). */
 @RestController
 @RequestMapping("/api")
 public class ApiController {
