@@ -1,0 +1,18 @@
+{
+  "name": "hogy-cockpit-charts",
+  "private": true,
+  "description": "ztd-charts 브라우저 번들 빌드(Thymeleaf 페이지에서 window.Charts 로 사용). 결과물은 src/main/resources/static/js/vendor 에 커밋됩니다.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "pretendard": "1.3.9",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "ztd-charts": "0.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

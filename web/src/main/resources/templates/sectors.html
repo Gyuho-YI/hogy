@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head(${market == 'kr' ? '국내 섹터' : '해외 섹터'})}"></head>
+<body th:attr="data-market=${market}">
+<header th:replace="~{fragments :: nav('sectors')}"></header>
+
+<main class="wrap" th:with="kr=${market == 'kr'}">
+  <div class="pagehead">
+    <div>
+      <p class="eyebrow" th:text="${kr} ? 'KRX 업종 · 뉴스 테마' : 'US Sector · Theme ETF'">시장</p>
+      <h1>섹터 레이더</h1>
+      <p class="meta" th:if="${snap.generatedAt}"><span>기준 <b th:text="${#strings.replace(snap.generatedAt, 'T', ' ')}"></b></span>
+        <span th:text="${snap.safeSectors().size()} + '개 섹터'"></span></p>
+    </div>
+    <div class="pagehead-r"><div th:replace="~{fragments :: market('sectors')}"></div></div>
+  </div>
+  <p th:if="${snap.loadError}" class="notice warn" role="status"><span th:text="${snap.loadError}"></span>
+    <a th:href="@{/settings}">설정</a></p>
+
+  <!-- ① 자금 흐름 5 -->
+  <section class="kpis" aria-label="섹터 핵심 지표">
+    <article class="kpi">
+      <h2 class="kpi-k">자금 1위 섹터</h2>
+      <p class="kpi-v txt" th:text="${sum.topSector ?: '–'}">–</p>
+      <p class="kpi-s" th:text="${sum.topRatio != null} ? '평소 대비 ' + ${#numbers.formatDecimal(sum.topRatio, 1, 2)} + '배' : '–'">–</p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k">자금 유입</h2>
+      <p class="kpi-v"><span th:text="${sum.inflow}">0</span><small>섹터</small></p>
+      <p class="kpi-s">쏠림 1.5배 이상</p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k">과열</h2>
+      <p class="kpi-v"><span th:text="${sum.overheated}">0</span><small>섹터</small></p>
+      <p class="kpi-s" th:classappend="${sum.overheated > 0} ? 'warn'" th:text="${sum.overheated > 0} ? '추격 매수 주의' : '해당 없음'">–</p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k" th:text="${kr} ? '뉴스 1위 테마' : '상대강도 1위'">1위</h2>
+      <p class="kpi-v txt" th:text="${sum.topTheme ?: '–'}">–</p>
+      <p class="kpi-s" th:text="${kr} ? '거래대금 급증 종목 헤드라인' : '1개월 수익률 − SPY'">–</p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k" th:text="${kr} ? '시장 확산도' : '추세 위 ETF'">확산도</h2>
+      <p class="kpi-v" th:text="${sum.breadthPct != null} ? ${#numbers.formatDecimal(sum.breadthPct * 100, 1, 0)} + '%' : '–'">–</p>
+      <p class="kpi-s" th:text="${kr} ? '거래대금 가중 상승 비율' : '50일선 위 비율'">–</p>
+    </article>
+  </section>
+
+  <!-- ② 섹터 맵: 넓이 = 거래대금, 색 = 등락률 -->
+  <section class="panel section-tight" aria-labelledby="map-t">
+    <div class="panel-h">
+      <div><h2 class="panel-t" id="map-t">섹터 맵</h2>
+        <p class="panel-s" th:text="${kr} ? '넓이 거래대금 · 색 등락률 · 섹터별 대장주 3종목' : '넓이 거래대금 · 색 등락률 · 섹터·테마 ETF'">넓이 거래대금 · 색 등락률</p></div>
+      <div class="tm-legend" id="map-legend" aria-label="등락률 색 범례"></div>
+    </div>
+    <div class="panel-b"><div class="tm-box" id="sector-map"></div></div>
+  </section>
+
+  <div class="split">
+    <!-- ③ 섹터 순위 -->
+    <section class="panel">
+      <div class="panel-h"><div><h2 class="panel-t">섹터 순위</h2>
+        <p class="panel-s" th:text="${kr} ? '점수 = 쏠림 45 · 비중 증가 25 · 확산 20 · 등락 10' : '점수 = 쏠림 45 · 상대강도 25 · 추세 20 · 등락 10'"></p></div></div>
+      <div class="empty" th:if="${snap.safeSectors().isEmpty()}"><b>데이터 없음</b></div>
+      <div class="tbl-wrap" th:unless="${snap.safeSectors().isEmpty()}">
+        <table class="tbl">
+          <thead>
+          <tr>
+            <th class="num">#</th><th>섹터</th><th>상태</th><th class="num">쏠림</th>
+            <th class="num" th:text="${kr} ? '비중' : '1M RS'">비중</th>
+            <th class="num">등락</th>
+            <th class="num hide-sm" th:text="${kr} ? '상승 비율' : '추세'">확산</th>
+            <th class="hide-sm" th:if="${kr}">대장주</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="r, s : ${snap.safeSectors()}" th:classappend="${!r.inflow()} ? 'dim'" class="row-static">
+            <td class="num flat" th:text="${s.count}">1</td>
+            <td><span class="nm" th:text="${r.sector}">섹터</span><span class="sub" th:if="${r.ticker}" th:text="${r.ticker}"></span></td>
+            <td th:switch="${r.flag}">
+              <span th:case="'과열'" class="tag warn">과열</span>
+              <span th:case="'신규 유입'" class="tag hot">신규 유입</span>
+              <span th:case="'유입'" class="tag info">유입</span>
+              <span th:case="'이탈'" class="tag">이탈</span>
+              <span th:case="*" class="flat">보통</span>
+            </td>
+            <td class="num"><b th:text="${r.ratio != null} ? ${#numbers.formatDecimal(r.ratio, 1, 2)} + '배' : '–'">–</b></td>
+            <td class="num" th:if="${kr}" th:text="${r.share != null} ? ${#numbers.formatDecimal(r.share * 100, 1, 1)} + '%' : '–'">–</td>
+            <td class="num" th:unless="${kr}" th:classappend="${r.rs1m != null and r.rs1m >= 0} ? 'up' : 'down'"
+                th:text="${r.rs1m != null} ? (${r.rs1m >= 0} ? '+' : '−') + ${#numbers.formatDecimal(r.rs1m < 0 ? -r.rs1m : r.rs1m, 1, 1)} + '%p' : '–'">–</td>
+            <td class="num" th:classappend="${r.change != null and r.change >= 0} ? 'up' : 'down'"
+                th:text="${r.change != null} ? (${r.change >= 0} ? '+' : '−') + ${#numbers.formatDecimal(r.change < 0 ? -r.change : r.change, 1, 2)} + '%' : '–'">–</td>
+            <td class="num hide-sm" th:if="${kr}" th:text="${r.breadth != null} ? ${#numbers.formatDecimal(r.breadth * 100, 1, 0)} + '%' : '–'">–</td>
+            <td class="num hide-sm" th:unless="${kr}" th:text="${r.breadth != null and r.breadth > 0} ? '50일선 위' : '아래'">–</td>
+            <td class="hide-sm" th:if="${kr}">
+              <span class="sub" th:each="l, ls : ${r.leaders}"
+                    th:text="${l.name} + ' ' + (${l.change >= 0} ? '+' : '−') + ${#numbers.formatDecimal(l.change < 0 ? -l.change : l.change, 1, 1)} + '%'"></span>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ④ 쏠림 상위 + 범례 -->
+    <div class="stack sticky">
+      <section class="panel">
+        <div class="panel-h"><div><h2 class="panel-t">쏠림 배수 상위 10</h2><p class="panel-s">1.0배 = 20일 평균</p></div></div>
+        <div class="panel-b"><div class="chart h-lg" id="ratio-chart" role="img" aria-label="섹터별 쏠림 배수"></div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-h"><h2 class="panel-t">상태 기준</h2></div>
+        <div class="panel-b">
+          <dl class="legend-list">
+            <dt>신규 유입</dt><dd>비중 3일 연속 증가 · 쏠림 1.5배↑</dd>
+            <dt>유입</dt><dd>쏠림 1.5배↑</dd>
+            <dt>과열</dt><dd>쏠림 3배↑ · 등락 +5%↑</dd>
+            <dt>이탈</dt><dd>쏠림 0.7배↓</dd>
+          </dl>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ⑤ 뉴스 테마(국내) -->
+  <section class="panel section" th:if="${kr}">
+    <div class="panel-h"><div><h2 class="panel-t">뉴스 테마</h2><p class="panel-s">거래대금 급증 상위 30종목 · 최근 3일 헤드라인</p></div></div>
+    <div class="empty" th:if="${snap.safeThemes().isEmpty()}"><b>분류된 테마 없음</b>
+      키워드 추가: <code>output/themes.json</code></div>
+    <div class="theme-grid" th:unless="${snap.safeThemes().isEmpty()}">
+      <article class="theme" th:each="t, ts : ${snap.safeThemes()}" th:if="${ts.index < 6}">
+        <div class="theme-h"><b th:text="${t.theme}">테마</b>
+          <span th:text="${t.stocks} + '종목 · 거래대금 ' + ${#numbers.formatDecimal(t.avgRatio, 1, 1)} + '배'"></span></div>
+        <ul class="rows">
+          <li th:each="m : ${t.members}">
+            <b th:text="${m.name}">종목</b>
+            <span class="grow" th:text="${m.headline}" th:title="${m.headline}">헤드라인</span>
+            <span class="r" th:classappend="${m.change >= 0} ? 'up' : 'down'"
+                  th:text="(${m.change >= 0} ? '+' : '−') + ${#numbers.formatDecimal(m.change < 0 ? -m.change : m.change, 1, 1)} + '%'"></span>
+          </li>
+        </ul>
+      </article>
+    </div>
+  </section>
+</main>
+
+<script th:src="@{/js/vendor/ztd-charts.min.js}"></script>
+<script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/sectors.js}"></script>
+</body>
+</html>

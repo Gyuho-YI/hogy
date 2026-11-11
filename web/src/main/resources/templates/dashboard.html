@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head(${market == 'kr' ? '국내 매매 계획' : '해외 매매 계획'})}"></head>
+<body th:attr="data-market=${market},data-decimals=${decimals}">
+<header th:replace="~{fragments :: nav('dash')}"></header>
+
+<main class="wrap" th:with="st=${snap.safeStats()}, us=${market == 'us'}">
+  <!-- 제목 · 기준 시각 · 시장 전환 -->
+  <div class="pagehead">
+    <div>
+      <p class="eyebrow" th:text="${us} ? 'US Equities · VCP' : 'KRX · 매집 / 점화'">시장</p>
+      <h1>매매 계획</h1>
+      <p class="meta" th:if="${snap.generatedAt}">
+        <span>기준 <b th:text="${#strings.replace(snap.generatedAt, 'T', ' ')}"></b></span>
+        <span th:if="${snap.account != null}">계좌 <b th:text="${#numbers.formatDecimal(snap.account, 1, 'COMMA', 0, 'POINT')} + (${us} ? ' USD' : '원')"></b></span>
+      </p>
+    </div>
+    <div class="pagehead-r">
+      <div th:replace="~{fragments :: market('dashboard')}"></div>
+    </div>
+  </div>
+
+  <p th:if="${krxMissing}" class="notice crit" role="alert">
+    <span><b>KRX 계정 미설정</b> · 국내 스크리닝을 실행할 수 없습니다</span>
+    <a th:href="@{/settings#krx}">계정 입력</a></p>
+  <p th:if="${snap.loadError}" class="notice warn" role="status">
+    <span th:text="${snap.loadError}"></span>
+    <a th:href="@{/settings}">스크리닝 실행</a></p>
+
+  <!-- ① 핵심 지표 5 -->
+  <section class="kpis" aria-label="핵심 지표">
+    <article class="kpi">
+      <h2 class="kpi-k">오늘 주문 대상</h2>
+      <p class="kpi-v"><span th:text="${kpi.actionable}">0</span><small th:text="'/ ' + ${kpi.candidates} + '종목'">/ 0종목</small></p>
+      <p class="kpi-s" th:if="${st['gated'] != null and st['gated'].intValue() > 0}"
+         th:text="'리스크 게이트 보류 ' + ${st['gated']} + '종목'">게이트</p>
+      <p class="kpi-s" th:unless="${st['gated'] != null and st['gated'].intValue() > 0}">실행 우선순위 순 정렬</p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k">총 위험 Heat</h2>
+      <p class="kpi-v" th:text="${kpi.heatPct != null} ? ${#numbers.formatDecimal(kpi.heatPct * 100, 1, 1)} + '%' : '–'">–</p>
+      <div class="meter" th:if="${kpi.heatPct != null}" th:classappend="${kpi.heatStatus != 'good'} ? 'over'"
+           role="img" th:attr="aria-label='한도 6% 대비 ' + ${#numbers.formatDecimal(kpi.heatPct * 100, 1, 1)} + '%'">
+        <i th:style="'width:' + ${kpi.heatPct * 1000 > 100 ? 100 : kpi.heatPct * 1000} + '%'"></i><s style="left:60%"></s>
+      </div>
+      <p class="kpi-s" th:switch="${kpi.heatStatus}">
+        <span th:case="'good'">한도 6% 이내</span>
+        <span th:case="'warning'" class="kpi-s warn">한도 6% 초과</span>
+        <span th:case="'critical'" class="kpi-s up">10% 초과 · 축소 필요</span>
+        <span th:case="*">계좌 금액 미설정</span>
+      </p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k">평균 손익비</h2>
+      <p class="kpi-v" th:text="${kpi.avgRewardRisk != null} ? ${#numbers.formatDecimal(kpi.avgRewardRisk, 1, 1)} + 'R' : '–'">–</p>
+      <p class="kpi-s">2차 목표 기준</p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k">체결 후 현금</h2>
+      <p class="kpi-v" th:text="${kpi.cashPct != null} ? ${#numbers.formatDecimal(kpi.cashPct * 100, 1, 0)} + '%' : '–'">–</p>
+      <p class="kpi-s" th:classappend="${kpi.cashPct != null and kpi.cashPct < 0} ? 'up'"
+         th:text="${kpi.cashPct != null and kpi.cashPct < 0} ? '계좌 초과 주문' : '보유 + 오늘 주문 반영'">보유 + 오늘 주문 반영</p>
+    </article>
+    <article class="kpi">
+      <h2 class="kpi-k">실전 기대값</h2>
+      <p class="kpi-v" th:text="${kpi.expectancyPct != null} ? ${#numbers.formatDecimal(kpi.expectancyPct * 100, 1, 2)} + '%' : '–'">–</p>
+      <p class="kpi-s" th:text="'거래당 평균 · 청산 ' + ${kpi.samples} + '건'">청산 0건</p>
+    </article>
+  </section>
+
+  <!-- ② 스크리닝 단계 -->
+  <section class="pipe" th:unless="${st.isEmpty()}" aria-label="스크리닝 단계">
+    <h2 class="sr-only">스크리닝 단계</h2>
+    <th:block th:if="${us}">
+      <div class="pipe-step"><span>검사</span><b th:text="${st['scanned']}">0</b></div>
+      <div class="pipe-step"><span>시세 수신</span><b th:text="${st['received']}">0</b></div>
+      <div class="pipe-step" th:if="${st['liquid'] != null}"><span>유동성 통과</span><b th:text="${st['liquid']}">0</b></div>
+      <div class="pipe-step"><span>추세 · RS 통과</span><b th:text="${st['trend']}">0</b></div>
+      <div class="pipe-step"><span>펀더멘털 통과</span><b th:text="${st['fundamental']}">0</b></div>
+      <div class="pipe-step end"><span>매수 셋업</span><b th:text="${st['setup']}">0</b></div>
+      <div class="pipe-step alt" th:if="${st['watch'] != null}"><span>관찰 표시</span><b th:text="${st['watch']}">0</b></div>
+    </th:block>
+    <th:block th:unless="${us}">
+      <div class="pipe-step"><span>분석</span><b th:text="${st['scanned']}">0</b></div>
+      <div class="pipe-step"><span>매집 · 점화 후보</span><b th:text="${st['candidates']}">0</b></div>
+      <div class="pipe-step end"><span>실행 가능</span><b th:text="${st['setup']}">0</b></div>
+    </th:block>
+    <div class="pipe-step alt" th:if="${st['gated'] != null}"><span>게이트 보류</span><b th:text="${st['gated']}">0</b></div>
+  </section>
+
+  <!-- ③ 계획표 + 종목 상세 -->
+  <div class="split">
+    <section class="panel" aria-labelledby="plan-t">
+      <div class="panel-h">
+        <div>
+          <h2 class="panel-t" id="plan-t">매매 계획표<em th:text="${items.size()}">0</em></h2>
+        </div>
+        <div class="seg" id="plan-filter" th:unless="${items.isEmpty()}" role="tablist" aria-label="필터">
+          <button type="button" class="on" data-f="all">전체</button>
+          <button type="button" data-f="act">실행</button>
+          <button type="button" data-f="rest">관찰 · 보류</button>
+        </div>
+      </div>
+      <div class="empty" th:if="${items.isEmpty() and snap.generatedAt != null}">
+        <b>조건 통과 종목 없음</b>스크리닝은 정상 완료되었습니다</div>
+      <div class="empty" th:if="${items.isEmpty() and snap.generatedAt == null}">
+        <b>결과 없음</b><a th:href="@{/settings}">설정에서 스크리닝 실행</a></div>
+
+      <div class="tbl-wrap" th:unless="${items.isEmpty()}">
+        <table class="tbl" id="plan-table">
+          <thead>
+          <tr>
+            <th>종목</th><th class="hide-sm">판단</th><th class="num">매수 구간</th><th class="num">손절</th>
+            <th class="num hide-sm">목표 1 · 2</th><th class="num hide-sm">시뮬레이션</th><th class="num hide-sm">수량</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="it : ${items}" th:attr="data-code=${it.code},data-act=${it.actionable()}"
+              class="row" th:classappend="${!it.actionable()} ? 'dim'" tabindex="0">
+            <td>
+              <span class="nm" th:text="${it.name}">이름</span>
+              <span class="sub" th:text="${it.code + ' · ' + it.stage}">코드</span>
+              <span class="st show-sm" th:classappend="${it.actionKey()}" th:text="${it.actionLabel()}">관망</span>
+              <span th:if="${hot[it.code]}" class="tag hot" th:title="${hot[it.code]}"
+                    th:text="${#strings.substringAfter(hot[it.code], ': ')}">섹터</span>
+              <span th:each="b : ${it.blockLabels()}" class="tag neg" th:text="${b}">보류</span>
+            </td>
+            <td class="hide-sm"><span class="st" th:classappend="${it.actionKey()}" th:text="${it.actionLabel()}">관망</span></td>
+            <!-- 매수 구간 / 관찰 종목은 감시 가격 -->
+            <td class="num zone" th:unless="${it.watching()}">
+              <span th:text="${it.buyLow != null and it.buyHigh != null} ? ${#numbers.formatDecimal(it.buyLow, 1, 'COMMA', decimals, 'POINT')} + ' – ' + ${#numbers.formatDecimal(it.buyHigh, 1, 'COMMA', decimals, 'POINT')} : '–'">–</span>
+              <span class="sub" th:if="${it.rrResistance != null}" th:text="'저항까지 ' + ${#numbers.formatDecimal(it.rrResistance, 1, 1)} + 'R'"></span>
+            </td>
+            <td class="num" th:if="${it.watching()}">
+              <span class="watch-v"><i>감시 ↑</i><span th:text="${#numbers.formatDecimal(it.watchBreakout, 1, 'COMMA', decimals, 'POINT')}">0</span></span>
+              <span class="sub" th:if="${it.close != null}" th:text="'현재가 대비 +' + ${#numbers.formatDecimal((it.watchBreakout / it.close - 1) * 100, 1, 1)} + '%'"></span>
+            </td>
+            <td class="num" th:if="${it.watching()}">
+              <span class="watch-v"><i>이탈 ↓</i><span th:text="${it.watchExit != null} ? ${#numbers.formatDecimal(it.watchExit, 1, 'COMMA', decimals, 'POINT')} : '–'">0</span></span>
+            </td>
+            <td class="num" th:unless="${it.watching()}">
+              <span th:text="${it.stop != null} ? ${#numbers.formatDecimal(it.stop, 1, 'COMMA', decimals, 'POINT')} : '–'">–</span>
+              <span class="sub down" th:if="${it.riskPct != null}" th:text="'−' + ${#numbers.formatDecimal(it.riskPct * 100, 1, 1)} + '%'"></span>
+            </td>
+            <td class="num hide-sm">
+              <span th:text="${it.t1 != null} ? ${#numbers.formatDecimal(it.t1, 1, 'COMMA', decimals, 'POINT')} : '–'">–</span>
+              <span class="sub" th:text="${it.t2 != null} ? ${#numbers.formatDecimal(it.t2, 1, 'COMMA', decimals, 'POINT')} + (${it.rewardRisk() != null} ? ' · ' + ${#numbers.formatDecimal(it.rewardRisk(), 1, 1)} + 'R' : '') : ''"></span>
+            </td>
+            <td class="num hide-sm">
+              <th:block th:if="${it.sim != null and it.sim.pTarget != null}">
+                <span th:text="${#numbers.formatDecimal(it.sim.pTarget * 100, 1, 0)} + '%'">0%</span>
+                <span class="sub" th:classappend="${it.sim.expR >= 0} ? 'up' : 'down'"
+                      th:text="(${it.sim.expR >= 0} ? '+' : '') + ${#numbers.formatDecimal(it.sim.expR, 1, 2)} + 'R'">0R</span>
+              </th:block>
+              <span th:unless="${it.sim != null and it.sim.pTarget != null}" class="flat">–</span>
+            </td>
+            <td class="num hide-sm">
+              <span th:text="${it.actionable()} ? ${#numbers.formatInteger(it.sharesNow, 1, 'COMMA')} : '–'">–</span>
+              <span class="sub" th:if="${it.sharesAdd > 0 and it.actionable()}" th:text="'+' + ${it.sharesAdd} + ' 점화 시'"></span>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 선택 종목 상세(dashboard.js 가 채움) -->
+    <aside class="panel sticky" id="detail" aria-live="polite" th:unless="${items.isEmpty()}">
+      <div class="empty"><b>종목을 선택하세요</b></div>
+    </aside>
+  </div>
+
+  <!-- ④ 후보 분포 -->
+  <div class="split even" th:unless="${items.isEmpty()}">
+    <section class="panel">
+      <div class="panel-h"><div><h2 class="panel-t">손절폭 · 목표 도달 확률</h2><p class="panel-s">시뮬레이션 1차 목표 선도달 · 좌상단일수록 유리</p></div></div>
+      <div class="panel-b"><div class="chart h-md" id="rr-chart" role="img" aria-label="후보별 손절폭과 목표 도달 확률"></div></div>
+    </section>
+    <section class="panel">
+      <div class="panel-h"><div><h2 class="panel-t">시뮬레이션 기대 R</h2><p class="panel-s">1만 회 · 60영업일 · 1차 목표 대비 손절</p></div></div>
+      <div class="panel-b"><div class="chart h-md" id="exp-chart" role="img" aria-label="후보별 시뮬레이션 평균 R"></div></div>
+    </section>
+  </div>
+</main>
+
+<script th:src="@{/js/vendor/ztd-charts.min.js}"></script>
+<script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/dashboard.js}"></script>
+</body>
+</html>

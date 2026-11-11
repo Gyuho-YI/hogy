@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head('설정')}"></head>
+<body>
+<header th:replace="~{fragments :: nav('settings')}"></header>
+
+<main class="wrap">
+  <div class="pagehead">
+    <div>
+      <p class="eyebrow">Preferences</p>
+      <h1>설정</h1>
+      <p class="meta"><span>버전 <b th:text="${appVersion}">dev</b></span><span>계정 <b th:text="${username}">owner</b></span></p>
+    </div>
+  </div>
+  <p th:if="${batchEnabled and !s.hasKrxAccount()}" class="notice crit" role="alert">
+    <span><b>KRX 계정 미설정</b> · 국내 스크리닝을 실행할 수 없습니다</span><a href="#krx">계정 입력</a></p>
+  <p th:if="${ok}" class="notice ok" role="status"><span th:text="${ok}"></span></p>
+  <p th:if="${error}" class="notice crit" role="alert"><span th:text="${error}"></span></p>
+
+  <div class="split even">
+    <div class="stack">
+      <!-- ① 스크리닝 실행 -->
+      <section class="panel">
+        <div class="panel-h"><div><h2 class="panel-t">스크리닝 실행</h2>
+          <p class="panel-s" th:unless="${batchEnabled}">서버 모드 · cron / 작업 스케줄러로 실행(APP_BATCH_ENABLED=true 로 전환)</p></div></div>
+        <div th:if="${batchEnabled}" class="batch">
+          <article th:each="b : ${batches}" class="batch-box" th:attr="data-market=${b.market}">
+            <h3 th:text="${b.market == 'kr' ? '국내' : '해외'}">시장</h3>
+            <p class="batch-state">
+              <span class="state-text" th:text="${b.label()}">상태</span>
+              <span class="sub" th:if="${b.finishedAt}" th:text="'종료 ' + ${#temporals.format(b.finishedAt, 'MM-dd HH:mm')}"></span>
+              <span class="sub" th:text="${b.market == 'kr'} ? '장 마감 후 18시 이후' : '미국 장 마감 후'"></span>
+            </p>
+            <form th:action="@{/settings/batch/{m}(m=${b.market})}" method="post">
+              <button type="submit" class="btn pri" th:disabled="${b.running}">지금 실행</button>
+            </form>
+            <details>
+              <summary>실행 로그</summary>
+              <pre class="log" th:text="${b.logText()}"></pre>
+            </details>
+          </article>
+        </div>
+      </section>
+
+      <!-- ② 계좌 · 자동 실행 -->
+      <section class="panel">
+        <div class="panel-h"><div><h2 class="panel-t">계좌 · 자동 실행</h2><p class="panel-s">매수 수량 = 계좌 × 위험 한도 ÷ 손절폭</p></div></div>
+        <div class="panel-b">
+          <form class="form" th:action="@{/settings/trading}" method="post">
+            <label class="field">국내 계좌 평가금액 (원)
+              <input type="number" name="accountKr" min="0" step="any" th:value="${s.accountKr != null} ? ${#numbers.formatDecimal(s.accountKr, 1, 0)}" placeholder="30000000"></label>
+            <label class="field">해외 계좌 평가금액 (USD)
+              <input type="number" name="accountUs" min="0" step="any" th:value="${s.accountUs != null} ? ${#numbers.formatDecimal(s.accountUs, 1, 2)}" placeholder="20000"></label>
+            <label class="check wide"><input type="checkbox" name="autoBatch" value="true" th:checked="${s.autoBatch}">
+              자동 실행 · 국내 평일 18:35 · 해외 화–토 07:10</label>
+            <div class="wide"><button type="submit" class="btn pri">저장</button></div>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <!-- ③ KRX 계정 -->
+      <section class="panel" id="krx">
+        <div class="panel-h"><div><h2 class="panel-t">KRX 계정</h2><p class="panel-s">정보데이터시스템 시세 조회 · AES-256 암호화 저장</p></div>
+          <span th:if="${s.hasKrxAccount()}" class="status-line ok" th:text="${s.krxId}">저장됨</span>
+          <span th:unless="${s.hasKrxAccount()}" class="status-line crit">미설정</span></div>
+        <div class="panel-b">
+          <form class="form" th:action="@{/settings/krx}" method="post">
+            <label class="field">아이디 <input name="krxId" th:value="${s.krxId}" autocomplete="off" required></label>
+            <label class="field">비밀번호 <input name="krxPw" type="password" autocomplete="new-password"
+                   th:placeholder="${s.hasKrxAccount()} ? '변경할 때만 입력' : ''"></label>
+            <p class="help wide">계정이 없으면 <a href="https://data.krx.co.kr" target="_blank" rel="noopener">data.krx.co.kr</a> 무료 가입</p>
+            <div class="wide inline">
+              <button type="submit" class="btn pri">저장</button>
+            </div>
+          </form>
+          <form th:if="${s.hasKrxAccount()}" th:action="@{/settings/krx}" method="post" style="margin-top:8px"
+                onsubmit="return confirm('저장된 KRX 계정을 삭제할까요?')">
+            <input type="hidden" name="clear" value="true">
+            <button type="submit" class="btn ghost sm">계정 삭제</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ④ 로그인 -->
+      <section class="panel">
+        <div class="panel-h"><h2 class="panel-t">로그인 비밀번호</h2></div>
+        <div class="panel-b">
+          <p th:if="${envPassword}" class="help">서버 환경변수(APP_PASSWORD)로 관리됩니다</p>
+          <form th:unless="${envPassword}" class="form" th:action="@{/settings/password}" method="post">
+            <label class="field wide">현재 비밀번호 <input type="password" name="current" autocomplete="current-password" required></label>
+            <label class="field">새 비밀번호 <input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
+            <label class="field">확인 <input type="password" name="confirm" minlength="8" autocomplete="new-password" required></label>
+            <div class="wide"><button type="submit" class="btn">변경</button></div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ⑤ 프로그램 -->
+      <section class="panel">
+        <div class="panel-h"><h2 class="panel-t">데이터</h2></div>
+        <div class="panel-b">
+          <dl class="legend-list">
+            <dt>위치</dt><dd>사용자 폴더 <code>Cockpit</code> (output · data · logs)</dd>
+            <dt>백업</dt><dd><code>Cockpit\data</code> 폴더 복사 · 매매일지 보존</dd>
+            <dt>업데이트</dt><dd>프로그램 폴더만 교체 · 데이터 유지</dd>
+          </dl>
+          <button th:if="${desktop}" type="button" id="shutdown" class="btn" style="margin-top:16px">프로그램 종료</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script th:inline="javascript">
+  /* 실행 중인 배치 상태를 3초마다 갱신, 끝나면 새로고침 */
+  (function () {
+    const csrf = /*[[${_csrf.token}]]*/ '';
+    const csrfHeader = /*[[${_csrf.headerName}]]*/ 'X-CSRF-TOKEN';
+    document.querySelectorAll('.batch-box').forEach((box) => {
+      const m = box.dataset.market;
+      const btn = box.querySelector('button');
+      if (!btn || !btn.disabled) return;
+      const timer = setInterval(async () => {
+        const r = await fetch(`/api/batch/${m}`, { headers: { Accept: 'application/json' } });
+        if (!r.ok) return;
+        const s = await r.json();
+        box.querySelector('.log').textContent = (s.tail || []).join('\n');
+        if (!s.running) { clearInterval(timer); location.reload(); }
+      }, 3000);
+    });
+    const sd = document.getElementById('shutdown');
+    if (sd) sd.addEventListener('click', async () => {
+      if (!confirm('프로그램을 종료할까요? (다시 켜려면 Cockpit 아이콘 실행)')) return;
+      const r = await fetch('/settings/shutdown', { method: 'POST', headers: { [csrfHeader]: csrf } });
+      const body = await r.json().catch(() => ({ message: '종료 요청을 보냈습니다.' }));
+      const p = document.createElement('p');
+      p.className = 'notice ok';
+      p.textContent = body.message;
+      document.querySelector('main').replaceChildren(p);
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head('처음 설정')}"></head>
+<body>
+<main class="auth">
+  <div class="auth-card">
+    <p class="auth-brand">Cockpit</p>
+    <h1>처음 설정</h1>
+    <p class="lead">이 PC 에서 쓸 로그인 비밀번호를 정합니다 · 아이디 <b>owner</b></p>
+    <form th:action="@{/setup}" method="post">
+      <p th:if="${error}" class="notice crit" role="alert" th:text="${error}"></p>
+      <label class="field">비밀번호 (8자 이상) <input name="password" type="password" minlength="8" autocomplete="new-password" required autofocus></label>
+      <label class="field">비밀번호 확인 <input name="confirm" type="password" minlength="8" autocomplete="new-password" required></label>
+      <button type="submit" class="btn pri block">저장하고 시작</button>
+    </form>
+    <p class="foot">BCrypt 암호화 · 사용자 폴더 Cockpit\data 에만 저장</p>
+  </div>
+</main>
+</body>
+</html>
