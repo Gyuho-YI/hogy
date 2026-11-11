@@ -46,8 +46,18 @@
     </article>
   </section>
 
+  <!-- ② 섹터 맵: 넓이 = 거래대금, 색 = 등락률 -->
+  <section class="panel section-tight" aria-labelledby="map-t">
+    <div class="panel-h">
+      <div><h2 class="panel-t" id="map-t">섹터 맵</h2>
+        <p class="panel-s" th:text="${kr} ? '넓이 거래대금 · 색 등락률 · 섹터별 대장주 3종목' : '넓이 거래대금 · 색 등락률 · 섹터·테마 ETF'">넓이 거래대금 · 색 등락률</p></div>
+      <div class="tm-legend" id="map-legend" aria-label="등락률 색 범례"></div>
+    </div>
+    <div class="panel-b"><div class="tm-box" id="sector-map"></div></div>
+  </section>
+
   <div class="split">
-    <!-- ② 섹터 순위 -->
+    <!-- ③ 섹터 순위 -->
     <section class="panel">
       <div class="panel-h"><div><h2 class="panel-t">섹터 순위</h2>
         <p class="panel-s" th:text="${kr} ? '점수 = 쏠림 45 · 비중 증가 25 · 확산 20 · 등락 10' : '점수 = 쏠림 45 · 상대강도 25 · 추세 20 · 등락 10'"></p></div></div>
@@ -92,7 +102,7 @@
       </div>
     </section>
 
-    <!-- ③ 쏠림 상위 + 범례 -->
+    <!-- ④ 쏠림 상위 + 범례 -->
     <div class="stack sticky">
       <section class="panel">
         <div class="panel-h"><div><h2 class="panel-t">쏠림 배수 상위 10</h2><p class="panel-s">1.0배 = 20일 평균</p></div></div>
@@ -112,7 +122,7 @@
     </div>
   </div>
 
-  <!-- ④ 뉴스 테마(국내) -->
+  <!-- ⑤ 뉴스 테마(국내) -->
   <section class="panel section" th:if="${kr}">
     <div class="panel-h"><div><h2 class="panel-t">뉴스 테마</h2><p class="panel-s">거래대금 급증 상위 30종목 · 최근 3일 헤드라인</p></div></div>
     <div class="empty" th:if="${snap.safeThemes().isEmpty()}"><b>분류된 테마 없음</b>

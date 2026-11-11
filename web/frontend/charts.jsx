@@ -9,7 +9,7 @@
  */
 import { createRoot } from "react-dom/client";
 import {
-  BarChart, CandlestickChart, FunnelChart, LineChart, ScatterChart, ThemeProvider, lightTheme,
+  BarChart, CandlestickChart, FunnelChart, LineChart, ScatterChart, ThemeProvider, lightTheme, squarify,
 } from "ztd-charts";
 
 const TOKENS = {
@@ -73,4 +73,5 @@ function unmount(el) {
   }
 }
 
-window.ZTD = { mount, unmount, tokens: TOKENS, version: "0.7.0" };
+// squarify: 섹터 맵(등락률 색 트리맵)처럼 ztd 차트가 직접 지원하지 않는 그림의 배치 계산용
+window.ZTD = { mount, unmount, squarify, tokens: TOKENS, version: "0.7.0" };

@@ -262,3 +262,4 @@ cd web/frontend && npm ci && npm run build
 
 - 진입점 `web/frontend/charts.jsx`: 화면 토큰(색·글꼴)과 같은 값으로 차트 테마를 고정하고 `window.ZTD.mount(el, type, props)` 를 노출합니다.
 - 사용 차트: candlestick(종목 가격) · line(시뮬레이션 분포, 월별 손익) · bar(결과 분포, 기대 R, 섹터 쏠림) · scatter(손절폭 × 목표 도달 확률)
+- 섹터 맵(Finviz 맵 형태): ztd Treemap 은 강조 1개만 칠하는 설계라, 배치만 `ZTD.squarify` 로 계산하고 등락률 색(±3% 최대, 상승 적 · 하락 청)은 `sectors.js` 에서 SVG 로 그립니다. 국내는 섹터 안에 대장주 3종목 + 기타를 중첩합니다.
